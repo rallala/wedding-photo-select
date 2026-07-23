@@ -739,6 +739,27 @@ const server = http.createServer(async (req, res) => {
         console.error('OAuth profile fetch error:', err.message);
       }
 
+      // Supabase DB에 회원 정보 즉시 저장 (Supabase 연동 시)
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+        fetch(`${process.env.SUPABASE_URL}/rest/v1/users`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+            'Prefer': 'resolution=merge-duplicates,return=minimal'
+          },
+          body: JSON.stringify({
+            email: userEmail,
+            name: userName,
+            gender: userGender || 'male',
+            birth_year: userBirthYear || 1995,
+            birthday: userBirthday || '05-20',
+            provider
+          })
+        }).catch(e => console.error('Supabase social user insert error:', e.message));
+      }
+
       const t = newToken();
       sessions.add(t);
       saveSessions();
