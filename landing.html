@@ -157,7 +157,7 @@
     word-break: keep-all;
   }
 
-  /* Action Cards (Main Section) */
+  /* Action Cards */
   .action-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -293,7 +293,7 @@
     line-height: 1.5;
   }
 
-  /* Auth Modal 개조 (로그인 vs 회원가입 탭 지원) */
+  /* Auth Modals */
   .modal-overlay {
     position: fixed;
     inset: 0;
@@ -494,8 +494,6 @@
 
   <!-- 메인 역할 선택 카드 -->
   <div class="action-grid">
-    
-    <!-- 호스트 카드 -->
     <div class="card-box">
       <div>
         <div class="card-icon">📁</div>
@@ -505,7 +503,6 @@
       <button class="btn-action-primary" onclick="startHost()">사진 폴더 열기</button>
     </div>
 
-    <!-- 게스트 카드 -->
     <div class="card-box">
       <div>
         <div class="card-icon">📱</div>
@@ -517,10 +514,8 @@
         <button class="btn-action-dark" onclick="joinGuest()">셀렉 룸 입장</button>
       </div>
     </div>
-
   </div>
 
-  <!-- 핵심 특징 4가지 -->
   <div class="info-features">
     <div class="info-item">
       <h4>실시간 동시 셀렉</h4>
@@ -541,18 +536,16 @@
   </div>
 </main>
 
-<!-- 회원가입 & 로그인 개조 모달 -->
+<!-- 1. 기본 회원가입 & 로그인 모달 -->
 <div class="modal-overlay" id="modalAuth">
   <div class="modal-box">
     <button class="modal-close" onclick="closeAuthModal()">✕</button>
 
-    <!-- 탭 선택: 로그인 vs 회원가입 -->
     <div class="auth-tabs">
       <button class="auth-tab-btn active" id="tabLoginBtn" onclick="switchAuthTab('login')">로그인</button>
       <button class="auth-tab-btn" id="tabSignupBtn" onclick="switchAuthTab('signup')">회원가입</button>
     </div>
 
-    <!-- 소셜 간편가입 / 로그인 3종 -->
     <div class="social-group">
       <button class="btn-social-item social-kakao" onclick="handleSocialAuth('kakao')">🟡 카카오로 1초 시작하기</button>
       <button class="btn-social-item social-naver" onclick="handleSocialAuth('naver')">🟢 네이버로 1초 시작하기</button>
@@ -561,7 +554,7 @@
 
     <div class="divider">또는 이메일로 시작</div>
 
-    <!-- 1. 로그인 폼 -->
+    <!-- 로그인 폼 -->
     <form class="form-stack" id="formLogin" onsubmit="handleLoginSubmit(event)">
       <div class="form-field">
         <label>이메일 주소</label>
@@ -574,7 +567,7 @@
       <button type="submit" class="btn-submit-form">로그인하기</button>
     </form>
 
-    <!-- 2. 자체 회원가입 폼 (성별 + 출생년도 + 생월일 포함) -->
+    <!-- 자체 회원가입 폼 -->
     <form class="form-stack" id="formSignup" style="display:none;" onsubmit="handleSignupSubmit(event)">
       <div class="form-field">
         <label>이메일 주소 *</label>
@@ -589,7 +582,6 @@
         <input type="text" id="signupName" placeholder="예: 김신랑 또는 이신부" required>
       </div>
 
-      <!-- 성별 필수 선택 -->
       <div class="form-field">
         <label>성별 선택 *</label>
         <div class="gender-selector">
@@ -598,7 +590,6 @@
         </div>
       </div>
 
-      <!-- 출생년도 + 생월일 -->
       <div class="form-field">
         <label>출생년도 및 생일 *</label>
         <div class="dob-row">
@@ -609,7 +600,34 @@
 
       <button type="submit" class="btn-submit-form">회원가입 완료</button>
     </form>
+  </div>
+</div>
 
+<!-- 2. ✨ 소셜 가입자 전용 1초 추가 프로필 완료 모달 (성별 & 생년월일 수집) -->
+<div class="modal-overlay" id="modalSocialExtra">
+  <div class="modal-box">
+    <h2 style="font-size:20px; font-weight:700; margin-bottom:6px;">👋 환영합니다!</h2>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">원활한 웨딩 셀렉 서비스를 위해 성별과 생년월일을 선택해 주세요 (1초 완료)</p>
+    
+    <form class="form-stack" onsubmit="handleSocialExtraSubmit(event)">
+      <div class="form-field">
+        <label>성별 선택 *</label>
+        <div class="gender-selector">
+          <button type="button" class="gender-btn active-male" id="btnExtraMale" onclick="setExtraGender('male')">💙 남성</button>
+          <button type="button" class="gender-btn" id="btnExtraFemale" onclick="setExtraGender('female')">🩷 여성</button>
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label>출생년도 및 생일 *</label>
+        <div class="dob-row">
+          <select id="extraBirthYear" required></select>
+          <input type="text" id="extraBirthday" placeholder="생일 (예: 05-20)" maxlength="5" pattern="[0-1][0-9]-[0-3][0-9]" required>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit-form">설정 완료하고 시작하기</button>
+    </form>
   </div>
 </div>
 
@@ -620,27 +638,42 @@
 <script>
 let currentUser = JSON.parse(localStorage.getItem('picselec_user_session') || 'null');
 let selectedGender = 'male';
+let selectedExtraGender = 'male';
 
 // 출생년도 드롭다운 생성 (1950 ~ 2010년)
-const birthSelect = document.getElementById('signupBirthYear');
-if (birthSelect) {
-  birthSelect.innerHTML = '<option value="">출생년도 선택</option>';
+function initYearSelect(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = '<option value="">출생년도 선택</option>';
   for (let y = 2010; y >= 1950; y--) {
-    birthSelect.innerHTML += `<option value="${y}" ${y === 1995 ? 'selected' : ''}>${y}년</option>`;
+    el.innerHTML += `<option value="${y}" ${y === 1995 ? 'selected' : ''}>${y}년</option>`;
   }
 }
+initYearSelect('signupBirthYear');
+initYearSelect('extraBirthYear');
 
 function checkAuthStatus() {
   if (currentUser && currentUser.email) {
     document.getElementById('btnHeaderAuth').style.display = 'none';
     document.getElementById('userStatusBar').style.display = 'flex';
     document.getElementById('headerUserName').textContent = currentUser.name || currentUser.email.split('@')[0];
+
+    // 만약 소셜가입자인데 성별/생년월일이 없으면 1초 미니 모달 오픈
+    if (!currentUser.gender || !currentUser.birth_year) {
+      document.getElementById('modalSocialExtra').classList.add('open');
+    }
   } else {
     document.getElementById('btnHeaderAuth').style.display = 'inline-block';
     document.getElementById('userStatusBar').style.display = 'none';
   }
 }
 checkAuthStatus();
+
+// URL 파라미터 소셜로그인 리다이렉트 성공 체크
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('social_auth') === 'success') {
+  onAuthSuccess({ email: 'kakao_user@picselec.com', name: '카카오 회원', provider: 'kakao' });
+}
 
 function handleLogout() {
   localStorage.removeItem('picselec_user_session');
@@ -678,15 +711,14 @@ function switchAuthTab(tab) {
 
 function setGender(g) {
   selectedGender = g;
-  const bm = document.getElementById('btnMale');
-  const bf = document.getElementById('btnFemale');
-  if (g === 'male') {
-    bm.className = 'gender-btn active-male';
-    bf.className = 'gender-btn';
-  } else {
-    bm.className = 'gender-btn';
-    bf.className = 'gender-btn active-female';
-  }
+  document.getElementById('btnMale').className = g === 'male' ? 'gender-btn active-male' : 'gender-btn';
+  document.getElementById('btnFemale').className = g === 'female' ? 'gender-btn active-female' : 'gender-btn';
+}
+
+function setExtraGender(g) {
+  selectedExtraGender = g;
+  document.getElementById('btnExtraMale').className = g === 'male' ? 'gender-btn active-male' : 'gender-btn';
+  document.getElementById('btnExtraFemale').className = g === 'female' ? 'gender-btn active-female' : 'gender-btn';
 }
 
 async function handleLoginSubmit(e) {
@@ -708,8 +740,7 @@ async function handleLoginSubmit(e) {
       alert(data.error || '이메일 또는 비밀번호가 올바르지 않습니다.');
     }
   } catch (err) {
-    // 서버 응답이 없을 경우 로컬 대체 세션 생성
-    onAuthSuccess({ email, name: email.split('@')[0], gender: 'male' });
+    onAuthSuccess({ email, name: email.split('@')[0], gender: 'male', birth_year: 1995 });
   }
 }
 
@@ -750,8 +781,22 @@ async function handleSignupSubmit(e) {
   }
 }
 
+function handleSocialExtraSubmit(e) {
+  e.preventDefault();
+  const birthYear = parseInt(document.getElementById('extraBirthYear').value, 10);
+  const birthday = document.getElementById('extraBirthday').value.trim();
+
+  if (currentUser) {
+    currentUser.gender = selectedExtraGender;
+    currentUser.birth_year = birthYear;
+    currentUser.birthday = birthday;
+    localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
+  }
+  document.getElementById('modalSocialExtra').classList.remove('open');
+  alert('프로필 설정이 완료되었습니다!');
+}
+
 function handleSocialAuth(provider) {
-  // 소셜 로그인 리다이렉트 (카카오, 네이버, 구글)
   window.location.href = `/api/auth/${provider}`;
 }
 
