@@ -711,6 +711,7 @@
   <p>© 2026 PicSelec. All rights reserved. | Premium Wedding Photo Selection</p>
 </footer>
 
+<script>
 let currentUser = JSON.parse(localStorage.getItem('picselec_user_session') || 'null');
 if (currentUser && (currentUser.name === '카카오 회원' || currentUser.email === 'kakao_user@picselec.com' || typeof currentUser === 'string')) {
   localStorage.removeItem('picselec_user_session');
