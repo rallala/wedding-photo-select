@@ -563,24 +563,6 @@ async function waitForBufferedAmountLow(dc) {
   });
 }
 
-// 원본 대신 캔버스로 축소한 썸네일만 P2P 전송 (대역폭 절약, "무거운 업로드 없음" 컨셉 유지)
-function downscaleToBlob(srcUrl, maxDim, quality) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * scale));
-      const h = Math.max(1, Math.round(img.height * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      canvas.toBlob(b => resolve(b), 'image/jpeg', quality);
-    };
-    img.onerror = () => resolve(null);
-    img.src = srcUrl;
-  });
-}
-
 async function sendManifestAndPhotos(dc) {
   dc.send(JSON.stringify({
     type: 'manifest',
@@ -588,10 +570,11 @@ async function sendManifestAndPhotos(dc) {
     total: state.photos.length
   }));
 
+  // p.url은 폴더를 열 때 이미 작게 축소해둔 썸네일이라, 원본을 다시 디코딩하지 않고 그대로 전송
   for (const p of state.photos) {
     if (dc.readyState !== 'open') return;
-    const blob = await downscaleToBlob(p.url, 1000, 0.82);
-    if (!blob) continue;
+    let blob;
+    try { blob = await fetch(p.url).then(r => r.blob()); } catch (_) { continue; }
     const buf = await blob.arrayBuffer();
 
     dc.send(JSON.stringify({ type: 'img-start', id: p.id, mime: blob.type }));
@@ -777,6 +760,21 @@ async function openFolderPicker() {
   } catch (err) {}
 }
 
+// 원본을 그대로 그리드에 물고 있으면 2천 장 넘는 폴더에서 브라우저가 메모리 부족으로 죽기 때문에,
+// 로드 시점에 작게 축소한 썸네일만 만들어서 들고 있고 원본(file)은 라이트박스에서 열 때만 씁니다.
+async function makeThumbBlob(file, maxDim, quality) {
+  try {
+    const bitmap = await createImageBitmap(file, { resizeWidth: maxDim, resizeHeight: maxDim, resizeQuality: 'medium' });
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width; canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    bitmap.close();
+    return await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+  } catch (_) {
+    return null; // 실패하면 호출부에서 원본으로 폴백
+  }
+}
+
 async function loadPhotosFromDirectory(dirHandle) {
   state.photos = [];
   state.byId.clear();
@@ -806,7 +804,8 @@ async function loadPhotosFromDirectory(dirHandle) {
   for (let i = 0; i < total; i++) {
     const item = rawEntries[i];
     const file = await item.entry.getFile();
-    const url = URL.createObjectURL(file);
+    const thumbBlob = await makeThumbBlob(file, 640, 0.85);
+    const url = URL.createObjectURL(thumbBlob || file);
     const photoObj = { id: item.entry.name, name: item.entry.name, folder: item.folder, file, url };
     state.photos.push(photoObj);
     state.byId.set(photoObj.id, photoObj);
@@ -851,11 +850,11 @@ function getFaceLandmarker() {
 }
 
 // eyeBlinkLeft/Right 점수(0=뜸, 1=완전히 감음)가 임계값을 넘는 얼굴이 하나라도 있으면 "눈감음 의심"
-async function detectEyesClosed(img) {
+async function detectEyesClosed(bitmap) {
   const landmarker = await getFaceLandmarker();
   if (!landmarker) return false;
   try {
-    const result = landmarker.detect(img);
+    const result = landmarker.detect(bitmap);
     const faces = result.faceBlendshapes || [];
     for (const face of faces) {
       const cats = face.categories || [];
@@ -880,12 +879,13 @@ async function runSmartAnalysisAsync() {
 
   for (let i = 0; i < total; i++) {
     const p = state.photos[i];
+    let bitmap = null;
     try {
-      const img = new Image();
-      img.src = p.url;
-      await new Promise(r => { img.onload = r; img.onerror = r; });
+      // p.url은 이미 축소된 썸네일이라 원본을 다시 디코딩하지 않음 (2천 장대 폴더 메모리 부족 방지)
+      const blob = await fetch(p.url).then(r => r.blob());
+      bitmap = await createImageBitmap(blob);
 
-      ctx.drawImage(img, 0, 0, 8, 8);
+      ctx.drawImage(bitmap, 0, 0, 8, 8);
       const imgData = ctx.getImageData(0, 0, 8, 8).data;
 
       let hashStr = '';
@@ -901,10 +901,12 @@ async function runSmartAnalysisAsync() {
 
       state.hashesCache.push({ id: p.id, hash: hashStr, folder: p.folder });
 
-      if (await detectEyesClosed(img)) {
+      if (await detectEyesClosed(bitmap)) {
         state.eyeClosedSet.add(p.id);
       }
-    } catch (_) {}
+    } catch (_) {} finally {
+      if (bitmap) bitmap.close();
+    }
 
     if (i % 25 === 0) await new Promise(r => setTimeout(r, 10));
   }
@@ -984,7 +986,7 @@ function renderGrid() {
 
     cell.innerHTML = `
       <div class="imgwrap">
-        <img src="${p.url}" alt="${esc(p.name)}" onload="this.classList.add('loaded')">
+        <img src="${p.url}" alt="${esc(p.name)}" loading="lazy" decoding="async" onload="this.classList.add('loaded')">
         <div class="cell-zoom-overlay">🔍 크게 보기</div>
         ${simGroup ? `<div class="cell-similar-badge">📦 ${esc(simGroup)}</div>` : ''}
         ${isEye ? `<div class="cell-eye-badge">👁️ 눈감음 의심</div>` : ''}
@@ -1116,12 +1118,24 @@ function saveNote() {
   renderLightboxExtra(photoId);
 }
 
+let lbFullResUrl = null; // 라이트박스용으로 그때그때 만든 원본 URL — 다음 사진 열 때 바로 해제
 function openLightbox(id) {
   const p = state.byId.get(id);
   if (!p) return;
   state.lbId = id;
 
-  $('#lbImg').src = p.url;
+  if (lbFullResUrl) { URL.revokeObjectURL(lbFullResUrl); lbFullResUrl = null; }
+  if (p.file) {
+    // 그리드엔 축소 썸네일(p.url)만 있으니, 크게보기는 원본 파일에서 그때그때 새로 만듦
+    lbFullResUrl = URL.createObjectURL(p.file);
+    $('#lbImg').src = lbFullResUrl;
+  } else if (!ROOM_MODE) {
+    // 레거시 로컬 서버 모드: 원본은 /img, 썸네일은 /thumb
+    $('#lbImg').src = '/img?path=' + encodeURIComponent(p.id);
+  } else {
+    // 게스트: P2P로 받은 썸네일이 전부라 원본이 없음
+    $('#lbImg').src = p.url;
+  }
   $('#lbTitle').textContent = p.name;
 
   const isPicked = state.sel[state.who]?.has(id);
@@ -1160,7 +1174,7 @@ function renderSidebar() {
     const item = document.createElement('div');
     item.className = 'side-cell';
     item.innerHTML = `
-      <img src="${p.url}" alt="${esc(p.name)}">
+      <img src="${p.url}" alt="${esc(p.name)}" loading="lazy" decoding="async">
       <span class="side-badge">${state.sideTab === 'common' ? '중복' : state.sideTab === 'groom' ? '신랑' : '신부'}</span>
     `;
     item.onclick = () => openLightbox(id);
