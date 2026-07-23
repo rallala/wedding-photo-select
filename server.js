@@ -629,17 +629,44 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, { ok: true, message: '비밀번호가 성공적으로 변경되었습니다.' });
   }
 
-  // 소셜 로그인 간편 리다이렉트 (카카오, 네이버, 구글)
+  // 3대 소셜 로그인 리다이렉트 (카카오, 네이버, 구글)
   if (p.startsWith('/api/auth/')) {
     const provider = p.replace('/api/auth/', '');
+    const baseUrl = externalUrl || 'https://picselec.com';
+
+    // 1. 카카오 OAuth
+    if (provider === 'kakao') {
+      const clientId = process.env.KAKAO_CLIENT_ID;
+      if (clientId) {
+        const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(baseUrl + '/api/auth/kakao/callback')}&response_type=code`;
+        res.writeHead(302, { 'Location': kakaoAuthUrl });
+        return res.end();
+      }
+    }
+
+    // 2. 네이버 OAuth
+    if (provider === 'naver') {
+      const clientId = process.env.NAVER_CLIENT_ID;
+      if (clientId) {
+        const naverAuthUrl = `https://nid.naver.com/oauth2.0/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(baseUrl + '/api/auth/naver/callback')}&response_type=code&state=picselec_state`;
+        res.writeHead(302, { 'Location': naverAuthUrl });
+        return res.end();
+      }
+    }
+
+    // 3. 구글 OAuth
+    if (provider === 'google') {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      if (clientId) {
+        const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(baseUrl + '/api/auth/google/callback')}&response_type=code&scope=email%20profile`;
+        res.writeHead(302, { 'Location': googleAuthUrl });
+        return res.end();
+      }
+    }
+
+    // 키가 아직 Vercel에 세팅되지 않은 경우
     if (['kakao', 'naver', 'google'].includes(provider)) {
-      const t = newToken();
-      sessions.add(t);
-      saveSessions();
-      res.writeHead(302, {
-        'Location': '/?social_auth=success',
-        'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
-      });
+      res.writeHead(302, { 'Location': `/?social_auth=need_key&provider=${provider}` });
       return res.end();
     }
   }
