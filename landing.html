@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <style>
   :root {
@@ -501,7 +502,13 @@
         <h3 class="card-title">내 PC 사진으로 셀렉하기</h3>
         <p class="card-text">컴퓨터에 저장된 웨딩 원본 사진 폴더를 열고 룸을 개설합니다. (프로그램 다운로드 없음)</p>
       </div>
-      <button class="btn-action-primary" onclick="startHost()">사진 폴더 열기</button>
+
+      <div id="myProjectsList" style="display:flex; flex-direction:column; gap:8px; margin:4px 0 12px;"></div>
+
+      <div class="guest-input-group">
+        <input type="text" class="input-code" id="newProjectName" placeholder="새 프로젝트 이름 (예: 2026 봄 웨딩)" maxlength="40">
+        <button class="btn-action-primary" onclick="createProject()">새 프로젝트 만들기</button>
+      </div>
     </div>
 
     <div class="card-box">
@@ -633,32 +640,46 @@
 
       <button type="submit" class="btn-submit-form">설정 완료하고 시작하기</button>
     </form>
-  <!-- 3. 🔐 비밀번호 재설정/변경 모달 -->
+  </div>
+</div>
+
+<!-- 3. 🔐 비밀번호 재설정/변경 모달 (자체 이메일 회원가입 계정 전용) -->
 <div class="modal-overlay" id="modalResetPassword">
   <div class="modal-box">
     <button class="modal-close" onclick="closeResetPasswordModal()">✕</button>
     <h2 style="font-size:20px; font-weight:700; margin-bottom:6px;">🔐 비밀번호 재설정</h2>
-    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">가입하신 이메일과 변경하실 새 비밀번호를 입력해 주세요.</p>
-    
-    <form class="form-stack" onsubmit="handleResetPasswordSubmit(event)">
-      <div class="form-field">
-        <label>가입 이메일 주소 *</label>
-        <input type="email" id="resetEmail" placeholder="example@wedding.com" required>
-      </div>
 
-      <div class="form-field">
-        <label>새 비밀번호 * (8자 이상, 영문+숫자+특수문자 포함)</label>
-        <input type="password" id="resetNewPassword" placeholder="8자 이상, 영문/숫자/특수문자(!@#$%^&*) 포함" required minlength="8" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&^])[A-Za-z\d@$!%*#?&^]{8,}$" title="8자 이상, 영문자, 숫자, 특수문자를 모두 포함해야 합니다.">
-      </div>
+    <!-- 로그아웃 상태(비밀번호를 잊은 경우): 이메일로 재설정 링크 전송 -->
+    <div id="resetStepRequest">
+      <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">가입하신 이메일 주소를 입력하시면 비밀번호 재설정 링크를 보내드립니다.</p>
+      <form class="form-stack" onsubmit="handleResetRequestSubmit(event)">
+        <div class="form-field">
+          <label>가입 이메일 주소 *</label>
+          <input type="email" id="resetEmail" placeholder="example@wedding.com" required>
+        </div>
+        <button type="submit" class="btn-submit-form">재설정 링크 받기</button>
+      </form>
+    </div>
 
-      <div class="form-field">
-        <label>새 비밀번호 확인 *</label>
-        <input type="password" id="resetNewPasswordConfirm" placeholder="새 비밀번호 재입력" required minlength="8">
-      </div>
+    <!-- 이메일 링크로 돌아왔거나(recovery 세션), 로그인 상태에서 마이페이지로 연 경우: 새 비밀번호 입력 -->
+    <div id="resetStepNewPassword" style="display:none;">
+      <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">새로 사용하실 비밀번호를 입력해 주세요.</p>
+      <form class="form-stack" onsubmit="handleResetPasswordSubmit(event)">
+        <div class="form-field">
+          <label>새 비밀번호 * (8자 이상, 영문+숫자+특수문자 포함)</label>
+          <input type="password" id="resetNewPassword" placeholder="8자 이상, 영문/숫자/특수문자(!@#$%^&*) 포함" required minlength="8" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&^])[A-Za-z\d@$!%*#?&^]{8,}$" title="8자 이상, 영문자, 숫자, 특수문자를 모두 포함해야 합니다.">
+        </div>
+        <div class="form-field">
+          <label>새 비밀번호 확인 *</label>
+          <input type="password" id="resetNewPasswordConfirm" placeholder="새 비밀번호 재입력" required minlength="8">
+        </div>
+        <button type="submit" class="btn-submit-form">비밀번호 변경하기</button>
+      </form>
+    </div>
+  </div>
+</div>
 
-      <button type="submit" class="btn-submit-form">비밀번호 변경하기</button>
-    </form>
-  <!-- 4. 👤 마이페이지 모달 (계정 상태, 프로필 수정, 회원 탈퇴) -->
+<!-- 4. 👤 마이페이지 모달 (계정 상태, 프로필 수정, 회원 탈퇴) -->
 <div class="modal-overlay" id="modalMyPage">
   <div class="modal-box" style="text-align:left;">
     <button class="modal-close" onclick="closeMyPageModal()">✕</button>
@@ -700,7 +721,7 @@
 
     <!-- 계정 관리 동작 버튼 그룹 -->
     <div style="display:flex; flex-direction:column; gap:10px;">
-      <button type="button" class="btn-action-primary" onclick="openResetPasswordModal()" style="padding:12px; font-size:14px;">🔐 비밀번호 변경하기</button>
+      <button type="button" class="btn-action-primary" id="btnChangePassword" onclick="openChangePasswordModal()" style="padding:12px; font-size:14px;">🔐 비밀번호 변경하기</button>
       <button type="button" class="btn-text" onclick="handleLogout()" style="width:100%; border:1px solid var(--border-color); border-radius:var(--radius-md); padding:10px; font-size:13px;">로그아웃</button>
       <button type="button" onclick="handleDeleteAccount()" style="background:none; border:none; color:#EF4444; font-size:12px; margin-top:6px; cursor:pointer; text-align:center; text-decoration:underline;">⚠️ 회원 탈퇴 및 계정 삭제</button>
     </div>
@@ -712,11 +733,9 @@
 </footer>
 
 <script>
-let currentUser = JSON.parse(localStorage.getItem('picselec_user_session') || 'null');
-if (currentUser && (currentUser.name === '카카오 회원' || currentUser.email === 'kakao_user@picselec.com' || typeof currentUser === 'string')) {
-  localStorage.removeItem('picselec_user_session');
-  currentUser = null;
-}
+const sb = supabase.createClient('__SUPABASE_URL__', '__SUPABASE_ANON_KEY__');
+
+let currentUser = null; // Supabase 세션에서 파생됨 (userFromSession 참고)
 let selectedGender = 'male';
 let selectedExtraGender = 'male';
 
@@ -732,48 +751,28 @@ function initYearSelect(elId) {
 initYearSelect('signupBirthYear');
 initYearSelect('extraBirthYear');
 
-// 1. URL 파라미터 소셜로그인 리다이렉트 성공 체크 (인증 결과 동기화)
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('social_auth') === 'success') {
-  const email = urlParams.get('email') || 'social_user@picselec.com';
-  const name = urlParams.get('name') || '소셜 회원';
-  const provider = urlParams.get('provider') || 'kakao';
-  const gender = urlParams.get('gender') || null;
-  const birthYear = urlParams.get('birth_year') || null;
-  const birthday = urlParams.get('birthday') || null;
-
-  currentUser = {
-    email,
-    name,
+function userFromSession(session) {
+  if (!session || !session.user) return null;
+  const u = session.user;
+  const meta = u.user_metadata || {};
+  const provider = meta.provider || 'email';
+  return {
+    id: u.id,
+    email: u.email,
+    name: meta.name || (u.email ? u.email.split('@')[0] : '회원'),
+    gender: meta.gender || 'male',
+    birth_year: meta.birth_year || null,
+    birthday: meta.birthday || null,
     provider,
-    gender,
-    birth_year: birthYear,
-    birthday,
-    need_social_extra: (!gender || !birthYear)
+    need_social_extra: provider !== 'email' && (!meta.gender || !meta.birth_year)
   };
-
-  localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
-  history.replaceState({}, document.title, window.location.pathname);
-
-  setTimeout(() => {
-    alert(`🎉 ${name}님 환영합니다!\n${provider.toUpperCase()} 계정으로 성공적으로 로그인되었습니다.`);
-  }, 100);
-}
-
-if (urlParams.get('social_auth') === 'need_key') {
-  const prov = urlParams.get('provider') || '소셜';
-  alert(`[${prov.toUpperCase()}] 로그인 연동 키(Client ID)를 Vercel 환경변수(Environment Variables)에 입력해 주시면 실제 ${prov} 공식 로그인 화면으로 연결됩니다!`);
 }
 
 function checkAuthStatus() {
-  if (typeof currentUser === 'string') {
-    currentUser = { email: currentUser + '@social.com', name: currentUser, provider: 'social' };
-    localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
-  }
-  if (currentUser && (currentUser.email || currentUser.name)) {
+  if (currentUser) {
     document.getElementById('btnHeaderAuth').style.display = 'none';
     document.getElementById('userStatusBar').style.display = 'flex';
-    document.getElementById('headerUserName').textContent = currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : '회원');
+    document.getElementById('headerUserName').textContent = currentUser.name;
 
     if (currentUser.need_social_extra) {
       document.getElementById('modalSocialExtra').classList.add('open');
@@ -782,8 +781,106 @@ function checkAuthStatus() {
     document.getElementById('btnHeaderAuth').style.display = 'inline-block';
     document.getElementById('userStatusBar').style.display = 'none';
   }
+  refreshMyProjects();
 }
-checkAuthStatus();
+
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// 계정당 최대 5개까지 유지되는 내 프로젝트 목록 (초과분은 DB 트리거가 오래된 것부터 자동 삭제)
+async function refreshMyProjects() {
+  const listEl = document.getElementById('myProjectsList');
+  if (!listEl) return;
+  if (!currentUser) { listEl.innerHTML = ''; return; }
+
+  const { data: projects, error } = await sb.from('projects')
+    .select('id, title, folder_name, room_code, created_at')
+    .eq('host_id', currentUser.id)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (error) { console.error('프로젝트 목록 조회 실패:', error.message); return; }
+
+  if (!projects || projects.length === 0) {
+    listEl.innerHTML = '<p style="font-size:12px; color:var(--text-secondary); margin:0;">아직 만든 프로젝트가 없어요. 아래에서 새로 만들어 보세요.</p>';
+    return;
+  }
+
+  listEl.innerHTML = projects.map(p => `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--card-bg);">
+      <div style="text-align:left; overflow:hidden;">
+        <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escHtml(p.title)}</div>
+        <div style="font-size:11px; color:var(--text-secondary);">${p.folder_name ? '📂 ' + escHtml(p.folder_name) : '폴더 미선택'} · 코드 ${escHtml(p.room_code)}</div>
+      </div>
+      <button class="btn-action-dark" style="flex-shrink:0; padding:6px 12px; font-size:12px;" onclick="openProject('${p.id}')">열기</button>
+    </div>
+  `).join('');
+}
+
+function openProject(id) {
+  location.href = '/app?mode=host&project=' + encodeURIComponent(id);
+}
+
+async function createProject() {
+  if (!currentUser) { openAuthModal('login'); return; }
+  const nameInput = document.getElementById('newProjectName');
+  const title = nameInput.value.trim();
+  if (!title) { alert('프로젝트 이름을 입력해 주세요.'); return; }
+
+  const roomCode = 'wps-' + Math.random().toString(36).slice(2, 8);
+  const { data, error } = await sb.from('projects')
+    .insert({ host_id: currentUser.id, title, room_code: roomCode })
+    .select()
+    .single();
+
+  if (error) { alert('프로젝트 생성에 실패했습니다: ' + error.message); return; }
+  nameInput.value = '';
+  location.href = '/app?mode=host&project=' + encodeURIComponent(data.id);
+}
+
+sb.auth.onAuthStateChange((event, session) => {
+  currentUser = userFromSession(session);
+  checkAuthStatus();
+  if (event === 'PASSWORD_RECOVERY') {
+    openChangePasswordModal();
+  }
+});
+
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  currentUser = userFromSession(session);
+  checkAuthStatus();
+})();
+
+// 카카오/네이버 로그인은 서버가 OAuth 교환을 마친 뒤 매직링크 토큰과 함께 돌아옵니다.
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('social_verify') === '1') {
+  const tokenHash = urlParams.get('token_hash');
+  const email = urlParams.get('email');
+  const provider = urlParams.get('provider') || '';
+  history.replaceState({}, document.title, window.location.pathname);
+  if (tokenHash && email) {
+    sb.auth.verifyOtp({ email, token_hash: tokenHash, type: 'magiclink' }).then(({ error }) => {
+      if (error) { alert('로그인에 실패했습니다: ' + error.message); return; }
+      setTimeout(() => alert(`🎉 ${provider.toUpperCase()} 계정으로 로그인되었습니다!`), 100);
+    });
+  }
+}
+if (urlParams.get('social_auth') === 'need_key') {
+  const prov = urlParams.get('provider') || '소셜';
+  alert(`[${prov.toUpperCase()}] 로그인 연동 키(Client ID)를 Vercel 환경변수(Environment Variables)에 입력해 주시면 실제 ${prov} 공식 로그인 화면으로 연결됩니다!`);
+  history.replaceState({}, document.title, window.location.pathname);
+}
+if (urlParams.get('social_auth') === 'error') {
+  alert('소셜 로그인 처리 중 오류가 발생했습니다. 다시 시도해 주세요.');
+  history.replaceState({}, document.title, window.location.pathname);
+}
+if (urlParams.get('join')) {
+  const codeEl = document.getElementById('inputRoomCode');
+  if (codeEl) codeEl.value = urlParams.get('join');
+  history.replaceState({}, document.title, window.location.pathname);
+}
 if (urlParams.get('naver_proof') === 'true') {
   openAuthModal('signup');
   setTimeout(() => {
@@ -795,23 +892,23 @@ if (urlParams.get('naver_proof') === 'true') {
 }
 
 function openMyPageModal() {
-  if (typeof currentUser === 'string') {
-    currentUser = { email: currentUser + '@social.com', name: currentUser, provider: 'social' };
-  }
   if (!currentUser) {
     openAuthModal('login');
     return;
   }
-  
+
   const provMap = { email: '✉️ 자체 이메일', kakao: '🟡 카카오', naver: '🟢 네이버', google: '🔴 구글' };
   document.getElementById('myPageProviderBadge').textContent = provMap[currentUser.provider] || `${currentUser.provider || '소셜'} 회원`;
   document.getElementById('myPageEmail').textContent = currentUser.email || '미등록 이메일';
   document.getElementById('myPageName').textContent = currentUser.name || '회원';
   document.getElementById('myPageGender').textContent = (currentUser.gender === 'female') ? '🩷 여성' : '💙 남성';
-  
+
   const by = currentUser.birth_year ? `${currentUser.birth_year}년` : '';
   const bd = currentUser.birthday ? ` ${currentUser.birthday}` : '';
   document.getElementById('myPageDob').textContent = (by || bd) ? `${by}${bd}` : '미설정 (1초 등록 권장)';
+
+  // 비밀번호 변경은 비밀번호를 가진 자체 이메일 가입 계정만 가능 (소셜 계정은 비밀번호가 없음)
+  document.getElementById('btnChangePassword').style.display = (currentUser.provider === 'email') ? 'block' : 'none';
 
   document.getElementById('modalMyPage').classList.add('open');
 }
@@ -825,24 +922,29 @@ async function handleDeleteAccount() {
     return;
   }
 
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return;
+
   try {
-    await fetch('/api/auth/delete-account', {
+    const r = await fetch('/api/auth/delete-account', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: currentUser.email })
+      headers: { 'Authorization': `Bearer ${session.access_token}` }
     });
-  } catch (e) {}
+    const data = await r.json();
+    if (!data.ok) { alert(data.error || '탈퇴 처리 중 오류가 발생했습니다.'); return; }
+  } catch (e) {
+    alert('탈퇴 처리 중 오류가 발생했습니다.');
+    return;
+  }
 
   alert('회원 탈퇴 및 계정 삭제가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.');
   closeMyPageModal();
-  handleLogout();
+  await sb.auth.signOut();
 }
 
 function handleLogout() {
-  localStorage.removeItem('picselec_user_session');
-  currentUser = null;
-  checkAuthStatus();
-  fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  closeMyPageModal();
+  sb.auth.signOut();
 }
 
 function openAuthModal(tab = 'login') {
@@ -887,140 +989,104 @@ function setExtraGender(g) {
 async function handleLoginSubmit(e) {
   e.preventDefault();
   const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value.trim();
+  const password = document.getElementById('loginPassword').value;
 
-  try {
-    const r = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await r.json();
-
-    if (data.ok) {
-      onAuthSuccess(data.user);
-    } else {
-      alert(data.error || '이메일 또는 비밀번호가 올바르지 않습니다.');
-    }
-  } catch (err) {
-    onAuthSuccess({ email, name: email.split('@')[0], gender: 'male', birth_year: 1995 });
-  }
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { alert('이메일 또는 비밀번호가 올바르지 않습니다.'); return; }
+  closeAuthModal();
 }
 
 async function handleSignupSubmit(e) {
   e.preventDefault();
   const email = document.getElementById('signupEmail').value.trim();
-  const password = document.getElementById('signupPassword').value.trim();
+  const password = document.getElementById('signupPassword').value;
   const name = document.getElementById('signupName').value.trim();
   const birthYear = parseInt(document.getElementById('signupBirthYear').value, 10);
   const birthday = document.getElementById('signupBirthday').value.trim();
 
-  const payload = {
-    email,
-    password,
-    name,
-    gender: selectedGender,
-    birth_year: birthYear,
-    birthday,
-    provider: 'email'
-  };
+  const { data, error } = await sb.auth.signUp({
+    email, password,
+    options: { data: { name, gender: selectedGender, birth_year: birthYear, birthday, provider: 'email' } }
+  });
+  if (error) { alert(error.message || '회원가입 중 오류가 발생했습니다.'); return; }
 
-  try {
-    const r = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await r.json();
-
-    if (data.ok) {
-      alert('회원가입이 완료되었습니다!');
-      onAuthSuccess(data.user);
-    } else {
-      alert(data.error || '회원가입 중 오류가 발생했습니다.');
-    }
-  } catch (err) {
-    onAuthSuccess({ email, name, gender: selectedGender, birth_year: birthYear, birthday });
+  if (data.session) {
+    alert('회원가입이 완료되었습니다!');
+    closeAuthModal();
+  } else {
+    alert('가입 확인 메일을 보내드렸습니다. 메일함을 확인해 이메일 인증을 완료해 주세요.');
+    closeAuthModal();
   }
 }
 
 function openResetPasswordModal() {
   closeAuthModal();
+  document.getElementById('resetStepRequest').style.display = 'block';
+  document.getElementById('resetStepNewPassword').style.display = 'none';
+  document.getElementById('modalResetPassword').classList.add('open');
+}
+function openChangePasswordModal() {
+  document.getElementById('resetStepRequest').style.display = 'none';
+  document.getElementById('resetStepNewPassword').style.display = 'block';
   document.getElementById('modalResetPassword').classList.add('open');
 }
 function closeResetPasswordModal() {
   document.getElementById('modalResetPassword').classList.remove('open');
 }
 
-async function handleResetPasswordSubmit(e) {
+async function handleResetRequestSubmit(e) {
   e.preventDefault();
   const email = document.getElementById('resetEmail').value.trim();
-  const newPassword = document.getElementById('resetNewPassword').value.trim();
-  const newPasswordConfirm = document.getElementById('resetNewPasswordConfirm').value.trim();
+
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: location.origin + location.pathname
+  });
+  if (error) { alert(error.message || '요청 처리 중 오류가 발생했습니다.'); return; }
+
+  alert('비밀번호 재설정 링크를 이메일로 보내드렸습니다. 메일함을 확인해 주세요.');
+  closeResetPasswordModal();
+}
+
+async function handleResetPasswordSubmit(e) {
+  e.preventDefault();
+  const newPassword = document.getElementById('resetNewPassword').value;
+  const newPasswordConfirm = document.getElementById('resetNewPasswordConfirm').value;
 
   if (newPassword !== newPasswordConfirm) {
     alert('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.');
     return;
   }
 
-  try {
-    const r = await fetch('/api/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, new_password: newPassword })
-    });
-    const data = await r.json();
+  const { error } = await sb.auth.updateUser({ password: newPassword });
+  if (error) { alert(error.message || '비밀번호 변경 중 오류가 발생했습니다.'); return; }
 
-    if (data.ok) {
-      alert('비밀번호가 성공적으로 변경되었습니다! 변경된 비밀번호로 로그인해 주세요.');
-      closeResetPasswordModal();
-      openAuthModal('login');
-    } else {
-      alert(data.error || '비밀번호 변경 중 오류가 발생했습니다.');
-    }
-  } catch (err) {
-    alert('비밀번호가 성공적으로 변경되었습니다!');
-    closeResetPasswordModal();
-    openAuthModal('login');
-  }
+  alert('비밀번호가 성공적으로 변경되었습니다!');
+  closeResetPasswordModal();
 }
 
-function handleSocialExtraSubmit(e) {
+async function handleSocialExtraSubmit(e) {
   e.preventDefault();
   const birthYear = parseInt(document.getElementById('extraBirthYear').value, 10);
   const birthday = document.getElementById('extraBirthday').value.trim();
 
-  if (currentUser) {
-    currentUser.gender = selectedExtraGender;
-    currentUser.birth_year = birthYear;
-    currentUser.birthday = birthday;
-    delete currentUser.need_social_extra;
-    localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
-  }
+  const { error } = await sb.auth.updateUser({ data: { gender: selectedExtraGender, birth_year: birthYear, birthday } });
+  if (error) { alert(error.message || '저장 중 오류가 발생했습니다.'); return; }
+
   document.getElementById('modalSocialExtra').classList.remove('open');
   alert('프로필 설정이 완료되었습니다!');
 }
 
 function handleSocialAuth(provider) {
-  window.location.href = `/api/auth/${provider}`;
-}
-
-function onAuthSuccess(userObj) {
-  currentUser = userObj;
-  localStorage.setItem('picselec_user_session', JSON.stringify(userObj));
-  checkAuthStatus();
-  closeAuthModal();
-}
-
-function startHost() {
-  if (!currentUser) {
-    openAuthModal('login');
-    return;
+  if (provider === 'google' || provider === 'kakao') {
+    // 구글/카카오는 Supabase Auth 기본 프로바이더라 서버를 거치지 않고 바로 연결됩니다.
+    sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } });
+  } else {
+    // 네이버는 Supabase 기본 프로바이더가 아니라 서버 경유 OAuth 교환이 필요합니다.
+    window.location.href = `/api/auth/${provider}`;
   }
-  location.href = '/app?mode=host';
 }
 
-function joinGuest() {
+async function joinGuest() {
   if (!currentUser) {
     openAuthModal('login');
     return;
@@ -1030,7 +1096,21 @@ function joinGuest() {
     alert('전달받으신 셀렉 룸 코드를 입력해 주세요.');
     return;
   }
-  location.href = '/app?mode=guest&room=' + encodeURIComponent(code);
+
+  const { data: project, error: findErr } = await sb.from('projects').select('id').eq('room_code', code).maybeSingle();
+  if (findErr || !project) {
+    alert('해당 룸 코드의 프로젝트를 찾을 수 없습니다. 코드를 다시 확인해 주세요.');
+    return;
+  }
+
+  // 이미 참여 중이어도 에러 없이 넘어가도록 멤버십 존재 여부만 보장
+  const { data: { user } } = await sb.auth.getUser();
+  await sb.from('project_members').upsert(
+    { project_id: project.id, user_id: user.id, role: 'guest' },
+    { onConflict: 'project_id,user_id', ignoreDuplicates: true }
+  );
+
+  location.href = '/app?mode=guest&project=' + encodeURIComponent(project.id);
 }
 </script>
 </body>

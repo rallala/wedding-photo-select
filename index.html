@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js"></script>
 
 <style>
   :root {
@@ -324,6 +326,13 @@
   <div class="lb-body">
     <img id="lbImg" src="" alt="크게보기">
   </div>
+  <div class="lb-extra" style="padding:10px 28px; background:rgba(0,0,0,0.3); color:#fff; display:flex; flex-direction:column; gap:8px; max-height:160px; overflow-y:auto;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span style="font-size:12px; color:#9CA3AF;">내 별점:</span>
+      <div id="lbStars" style="display:flex; gap:4px; font-size:18px; cursor:pointer;"></div>
+    </div>
+    <div id="lbNotes" style="display:flex; flex-direction:column; gap:6px;"></div>
+  </div>
   <div class="lb-foot">
     <div style="flex:1; max-width:440px; display:flex; gap:8px;">
       <input type="text" id="noteInput" placeholder="작가 보정요청사항 작성 (예: 피부 보정)" style="flex:1; background:#111827; border:1px solid #374151; color:#fff; padding:10px 14px; border-radius:8px; font-size:13px; outline:none;">
@@ -353,7 +362,336 @@ const state = {
 };
 
 const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 $('#roomCodeVal').textContent = state.roomCode;
+
+// ---------- 셀렉룸: 사진 업로드 없이 WebRTC로 호스트→게스트 직접 전송, 시그널링은 Supabase Realtime ----------
+// 선택/노트/별점은 project_state 테이블(Postgres)에 영속화되어, 한 번에 다 못 고르고
+// 나중에 같은 프로젝트(=같은 폴더)로 다시 들어와도 이어집니다. (supabase/schema.sql 참고)
+const sb = supabase.createClient('__SUPABASE_URL__', '__SUPABASE_ANON_KEY__');
+const roomParams = new URLSearchParams(location.search);
+const ROOM_MODE = roomParams.get('mode'); // 'host' | 'guest' | null(레거시 로컬 서버 모드)
+const PROJECT_ID_FROM_URL = roomParams.get('project') || null; // 호스트/게스트 모두 landing.html에서 URL로 프로젝트 id를 받음
+const CLIENT_ID = Math.random().toString(36).slice(2, 10);
+const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const CHUNK_SIZE = 16 * 1024;
+
+const room = {
+  isHost: ROOM_MODE === 'host',
+  isGuest: ROOM_MODE === 'guest',
+  channel: null,
+  projectId: null,        // project_state를 찾는 실제 키
+  roomCode: null,         // 사람이 공유하는 짧은 초대 코드(호스트 전용 표시용)
+  peers: new Map(),       // guestId -> RTCPeerConnection (호스트 전용)
+  hostPc: null,           // 게스트 전용
+  connectedGuests: 0,
+  receivedCount: 0,
+  totalCount: 0
+};
+
+function broadcastRoom(event, payload) {
+  if (!room.channel) return;
+  room.channel.send({ type: 'broadcast', event, payload });
+}
+
+function updateRoomBadge() {
+  if (room.isHost) $('#roomCodeVal').textContent = `${room.roomCode} (${room.connectedGuests}명 접속)`;
+}
+
+// 카카오톡으로 접속 코드 보내기 (JS 키 미설정 시 클립보드 복사로 대체)
+if (window.Kakao && !Kakao.isInitialized()) {
+  try { Kakao.init('__KAKAO_JS_KEY__'); } catch (_) {}
+}
+function shareRoomCode() {
+  if (!room.isHost || !room.roomCode) { alert('먼저 사진 폴더를 선택해 룸을 시작해 주세요.'); return; }
+
+  const joinUrl = location.origin + '/?join=' + encodeURIComponent(room.roomCode);
+  const text = `💒 PicSelec 셀렉룸에 초대합니다!\n접속 코드: ${room.roomCode}\n${joinUrl}`;
+
+  if (window.Kakao && Kakao.isInitialized()) {
+    Kakao.Share.sendDefault({
+      objectType: 'text',
+      text,
+      link: { mobileWebUrl: joinUrl, webUrl: joinUrl }
+    });
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+      .then(() => alert('접속 코드와 링크가 복사되었습니다. 카카오톡에 붙여넣어 보내주세요!'))
+      .catch(() => alert(text));
+  } else {
+    alert(text);
+  }
+}
+$('#btnRoomShare').onclick = shareRoomCode;
+
+// 프로젝트는 landing.html에서 이름 붙여 미리 만들어지고, 여기서는 그 프로젝트에 폴더를 고정 연결만 합니다.
+// 처음 여는 프로젝트면 지금 고른 폴더로 확정하고, 이미 폴더가 정해진 프로젝트면 같은 폴더인지 검증합니다
+// (하나의 프로젝트에는 하나의 폴더만 — 다른 폴더를 고르면 거부합니다).
+async function bindProjectFolder(projectId, folderName) {
+  const { data: project, error } = await sb.from('projects').select('*').eq('id', projectId).single();
+  if (error || !project) { alert('프로젝트 정보를 찾을 수 없습니다. 처음 화면에서 다시 시작해 주세요.'); return null; }
+
+  if (!project.folder_name) {
+    const { data: updated, error: updErr } = await sb.from('projects')
+      .update({ folder_name: folderName })
+      .eq('id', projectId)
+      .select()
+      .single();
+    if (updErr) { alert('폴더 등록에 실패했습니다: ' + updErr.message); return null; }
+    return updated;
+  }
+
+  if (project.folder_name !== folderName) {
+    alert(`이 프로젝트("${project.title}")는 "${project.folder_name}" 폴더로 시작됐어요.\n선택하신 "${folderName}" 폴더와 일치하지 않아 열 수 없습니다. 같은 폴더를 다시 선택해 주세요.`);
+    return null;
+  }
+  return project;
+}
+
+async function loadOrInitProjectState(projectId) {
+  const { data, error } = await sb.from('project_state').select('*').eq('project_id', projectId).maybeSingle();
+  if (error) { console.error('프로젝트 상태 로드 실패:', error.message); return; }
+
+  if (data) {
+    state.sel.groom = new Set(data.selections?.groom || []);
+    state.sel.bride = new Set(data.selections?.bride || []);
+    state.notes = data.notes || {};
+    state.ratings = data.ratings || {};
+  } else {
+    await sb.from('project_state').insert({ project_id: projectId, selections: {}, notes: {}, ratings: {} });
+  }
+}
+
+function applyProjectStateRow(row) {
+  state.sel.groom = new Set(row.selections?.groom || []);
+  state.sel.bride = new Set(row.selections?.bride || []);
+  state.notes = row.notes || {};
+  state.ratings = row.ratings || {};
+  renderGrid();
+  updateCounts();
+  renderSidebar();
+}
+
+function subscribeProjectState() {
+  room.channel.on('postgres_changes', {
+    event: 'UPDATE', schema: 'public', table: 'project_state', filter: `project_id=eq.${room.projectId}`
+  }, ({ new: row }) => applyProjectStateRow(row));
+}
+
+let stateSaveTimer = null;
+function persistProjectState() {
+  if (!room.projectId) return;
+  clearTimeout(stateSaveTimer);
+  stateSaveTimer = setTimeout(async () => {
+    const selections = {};
+    for (const k of Object.keys(state.sel)) selections[k] = Array.from(state.sel[k]);
+    const { error } = await sb.from('project_state')
+      .update({ selections, notes: state.notes, ratings: state.ratings, updated_at: new Date().toISOString() })
+      .eq('project_id', room.projectId);
+    if (error) console.error('선택 저장 실패:', error.message);
+  }, 300);
+}
+
+// ===== 호스트 =====
+async function initRoomHost(folderName) {
+  if (!PROJECT_ID_FROM_URL) { alert('프로젝트 정보가 없습니다. 처음 화면에서 다시 시작해 주세요.'); location.href = '/'; return; }
+  const project = await bindProjectFolder(PROJECT_ID_FROM_URL, folderName);
+  if (!project) return;
+  room.projectId = project.id;
+  room.roomCode = project.room_code;
+  updateRoomBadge();
+
+  await loadOrInitProjectState(room.projectId);
+  renderGrid(); updateCounts(); renderSidebar();
+
+  room.channel = sb.channel('room:' + room.projectId, { config: { broadcast: { self: false } } });
+  room.channel.on('broadcast', { event: 'join-request' }, ({ payload }) => handleGuestJoin(payload.guestId));
+  room.channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
+    if (payload.to === CLIENT_ID) handleSignalAtHost(payload);
+  });
+  subscribeProjectState();
+  await room.channel.subscribe();
+}
+
+async function handleGuestJoin(guestId) {
+  if (room.peers.has(guestId)) return;
+  const pc = new RTCPeerConnection(RTC_CONFIG);
+  room.peers.set(guestId, pc);
+
+  const dc = pc.createDataChannel('picselec');
+  wireHostDataChannel(dc);
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) broadcastRoom('signal', { to: guestId, from: CLIENT_ID, kind: 'ice', candidate: e.candidate });
+  };
+  pc.onconnectionstatechange = () => {
+    if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+      room.peers.delete(guestId);
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  broadcastRoom('signal', { to: guestId, from: CLIENT_ID, kind: 'offer', sdp: offer });
+}
+
+async function handleSignalAtHost(payload) {
+  const pc = room.peers.get(payload.from);
+  if (!pc) return;
+  if (payload.kind === 'answer') await pc.setRemoteDescription(payload.sdp);
+  else if (payload.kind === 'ice') { try { await pc.addIceCandidate(payload.candidate); } catch (_) {} }
+}
+
+function wireHostDataChannel(dc) {
+  dc.onopen = async () => {
+    room.connectedGuests++;
+    updateRoomBadge();
+    await sendManifestAndPhotos(dc);
+  };
+  dc.onclose = () => {
+    room.connectedGuests = Math.max(0, room.connectedGuests - 1);
+    updateRoomBadge();
+  };
+}
+
+async function waitForBufferedAmountLow(dc) {
+  if (dc.bufferedAmount <= CHUNK_SIZE * 4) return;
+  await new Promise(resolve => {
+    dc.bufferedAmountLowThreshold = CHUNK_SIZE * 2;
+    const handler = () => { dc.removeEventListener('bufferedamountlow', handler); resolve(); };
+    dc.addEventListener('bufferedamountlow', handler);
+  });
+}
+
+// 원본 대신 캔버스로 축소한 썸네일만 P2P 전송 (대역폭 절약, "무거운 업로드 없음" 컨셉 유지)
+function downscaleToBlob(srcUrl, maxDim, quality) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(b => resolve(b), 'image/jpeg', quality);
+    };
+    img.onerror = () => resolve(null);
+    img.src = srcUrl;
+  });
+}
+
+async function sendManifestAndPhotos(dc) {
+  dc.send(JSON.stringify({
+    type: 'manifest',
+    photos: state.photos.map(p => ({ id: p.id, name: p.name, folder: p.folder })),
+    total: state.photos.length
+  }));
+
+  for (const p of state.photos) {
+    if (dc.readyState !== 'open') return;
+    const blob = await downscaleToBlob(p.url, 1000, 0.82);
+    if (!blob) continue;
+    const buf = await blob.arrayBuffer();
+
+    dc.send(JSON.stringify({ type: 'img-start', id: p.id, mime: blob.type }));
+    for (let off = 0; off < buf.byteLength; off += CHUNK_SIZE) {
+      await waitForBufferedAmountLow(dc);
+      if (dc.readyState !== 'open') return;
+      dc.send(buf.slice(off, off + CHUNK_SIZE));
+    }
+    dc.send(JSON.stringify({ type: 'img-end', id: p.id }));
+  }
+  if (dc.readyState === 'open') dc.send(JSON.stringify({ type: 'all-sent' }));
+}
+
+// ===== 게스트 =====
+async function initRoomGuest() {
+  room.projectId = PROJECT_ID_FROM_URL;
+  $('#progressModal').classList.add('open');
+  $('#progressTitle').textContent = '📡 셀렉룸에 연결하는 중입니다...';
+  $('#progressSub').textContent = '호스트가 사진 폴더를 여는 즉시 자동으로 전송이 시작돼요.';
+
+  await loadOrInitProjectState(room.projectId);
+
+  room.channel = sb.channel('room:' + room.projectId, { config: { broadcast: { self: false } } });
+  room.channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
+    if (payload.to === CLIENT_ID) handleSignalAtGuest(payload);
+  });
+  subscribeProjectState();
+  await room.channel.subscribe();
+  broadcastRoom('join-request', { guestId: CLIENT_ID });
+}
+
+async function handleSignalAtGuest(payload) {
+  if (payload.kind === 'offer') {
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    room.hostPc = pc;
+    pc.onicecandidate = (e) => {
+      if (e.candidate) broadcastRoom('signal', { to: payload.from, from: CLIENT_ID, kind: 'ice', candidate: e.candidate });
+    };
+    pc.ondatachannel = (e) => wireGuestDataChannel(e.channel);
+
+    await pc.setRemoteDescription(payload.sdp);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    broadcastRoom('signal', { to: payload.from, from: CLIENT_ID, kind: 'answer', sdp: answer });
+  } else if (payload.kind === 'ice' && room.hostPc) {
+    try { await room.hostPc.addIceCandidate(payload.candidate); } catch (_) {}
+  }
+}
+
+function wireGuestDataChannel(dc) {
+  dc.binaryType = 'arraybuffer';
+  let building = null;
+
+  dc.onmessage = (e) => {
+    if (typeof e.data !== 'string') {
+      if (building) building.chunks.push(new Uint8Array(e.data));
+      return;
+    }
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'manifest') {
+      state.photos = msg.photos.map(p => ({ ...p, url: '' }));
+      state.byId.clear();
+      state.photos.forEach(p => state.byId.set(p.id, p));
+
+      const selEl = $('#folderSelect');
+      state.folders = Array.from(new Set(state.photos.map(p => p.folder))).sort();
+      selEl.innerHTML = `<option value="">📁 전체 폴더 보기 (${msg.total}장)</option>`;
+      state.folders.forEach(f => {
+        const count = state.photos.filter(p => p.folder === f).length;
+        selEl.innerHTML += `<option value="${esc(f)}">📂 ${esc(f)} (${count}장)</option>`;
+      });
+
+      room.receivedCount = 0;
+      room.totalCount = msg.total;
+      $('#progressTitle').textContent = `📸 사진 ${msg.total}장을 받는 중입니다...`;
+    } else if (msg.type === 'img-start') {
+      building = { id: msg.id, mime: msg.mime, chunks: [] };
+    } else if (msg.type === 'img-end') {
+      if (building && building.id === msg.id) {
+        const blob = new Blob(building.chunks, { type: building.mime });
+        const p = state.byId.get(building.id);
+        if (p) p.url = URL.createObjectURL(blob);
+        room.receivedCount++;
+        const pct = room.totalCount ? Math.round((room.receivedCount / room.totalCount) * 100) : 0;
+        $('#progressBarFill').style.width = pct + '%';
+        $('#progressPercent').textContent = `${pct}% (${room.receivedCount} / ${room.totalCount} 장)`;
+      }
+      building = null;
+    } else if (msg.type === 'all-sent') {
+      $('#progressModal').classList.remove('open');
+      renderGrid();
+      updateCounts();
+      renderSidebar();
+      setTimeout(runSmartAnalysisAsync, 500);
+    }
+  };
+}
+
+window.addEventListener('beforeunload', () => { room.channel?.unsubscribe(); });
 
 function selectRole(role) {
   state.who = role;
@@ -484,6 +822,49 @@ async function loadPhotosFromDirectory(dirHandle) {
   $('#progressModal').classList.remove('open');
   renderGrid();
   setTimeout(runSmartAnalysisAsync, 500);
+
+  if (room.isHost) initRoomHost(dirHandle.name);
+}
+
+// 👁️ 눈감음 실제 감지: MediaPipe Face Landmarker의 blendshape(eyeBlinkLeft/Right) 사용
+// (카메라/서버 업로드 없이 브라우저 안에서 WASM으로 돌아가서 "무거운 업로드 없음" 컨셉과도 맞음)
+let faceLandmarkerPromise = null;
+function getFaceLandmarker() {
+  if (!faceLandmarkerPromise) {
+    faceLandmarkerPromise = (async () => {
+      const { FilesetResolver, FaceLandmarker } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14');
+      const filesetResolver = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+      );
+      return FaceLandmarker.createFromOptions(filesetResolver, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+          delegate: 'GPU'
+        },
+        runningMode: 'IMAGE',
+        numFaces: 4,
+        outputFaceBlendshapes: true
+      });
+    })().catch(err => { console.error('MediaPipe 로드 실패, 눈감음 감지를 건너뜁니다:', err); return null; });
+  }
+  return faceLandmarkerPromise;
+}
+
+// eyeBlinkLeft/Right 점수(0=뜸, 1=완전히 감음)가 임계값을 넘는 얼굴이 하나라도 있으면 "눈감음 의심"
+async function detectEyesClosed(img) {
+  const landmarker = await getFaceLandmarker();
+  if (!landmarker) return false;
+  try {
+    const result = landmarker.detect(img);
+    const faces = result.faceBlendshapes || [];
+    for (const face of faces) {
+      const cats = face.categories || [];
+      const l = cats.find(c => c.categoryName === 'eyeBlinkLeft')?.score || 0;
+      const r = cats.find(c => c.categoryName === 'eyeBlinkRight')?.score || 0;
+      if (l > 0.6 && r > 0.6) return true;
+    }
+  } catch (_) {}
+  return false;
 }
 
 // ⚖️ 황금 밸런스 유사 알고리즘 (감도 슬라이더 바 실시간 조율 연동!)
@@ -506,9 +887,8 @@ async function runSmartAnalysisAsync() {
 
       ctx.drawImage(img, 0, 0, 8, 8);
       const imgData = ctx.getImageData(0, 0, 8, 8).data;
-      
+
       let hashStr = '';
-      let totalBrightness = 0;
       for (let y = 0; y < 8; y++) {
         for (let x = 0; x < 7; x++) {
           const i1 = (y * 8 + x) * 4;
@@ -516,13 +896,12 @@ async function runSmartAnalysisAsync() {
           const b1 = (imgData[i1] + imgData[i1+1] + imgData[i1+2]) / 3;
           const b2 = (imgData[i2] + imgData[i2+1] + imgData[i2+2]) / 3;
           hashStr += b1 > b2 ? '1' : '0';
-          totalBrightness += b1;
         }
       }
 
       state.hashesCache.push({ id: p.id, hash: hashStr, folder: p.folder });
 
-      if (totalBrightness / 56 < 65 && Math.random() > 0.65) {
+      if (await detectEyesClosed(img)) {
         state.eyeClosedSet.add(p.id);
       }
     } catch (_) {}
@@ -605,15 +984,15 @@ function renderGrid() {
 
     cell.innerHTML = `
       <div class="imgwrap">
-        <img src="${p.url}" alt="${p.name}" onload="this.classList.add('loaded')">
+        <img src="${p.url}" alt="${esc(p.name)}" onload="this.classList.add('loaded')">
         <div class="cell-zoom-overlay">🔍 크게 보기</div>
-        ${simGroup ? `<div class="cell-similar-badge">📦 ${simGroup}</div>` : ''}
+        ${simGroup ? `<div class="cell-similar-badge">📦 ${esc(simGroup)}</div>` : ''}
         ${isEye ? `<div class="cell-eye-badge">👁️ 눈감음 의심</div>` : ''}
         <button class="heart">${mine ? '♥' : '♡'}</button>
       </div>
       <div class="cell-info-bar">
-        <div class="name">${p.name}</div>
-        ${p.folder ? `<div class="folder-tag">📂 ${p.folder}</div>` : ''}
+        <div class="name">${esc(p.name)}</div>
+        ${p.folder ? `<div class="folder-tag">📂 ${esc(p.folder)}</div>` : ''}
       </div>
     `;
 
@@ -633,12 +1012,17 @@ function toggleSelect(id) {
   const set = state.sel[state.who];
   if (set.has(id)) set.delete(id);
   else set.add(id);
-  
-  fetch('/api/select', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, who: state.who })
-  }).catch(_ => {});
+  const selected = set.has(id);
+
+  if (ROOM_MODE) {
+    persistProjectState();
+  } else {
+    fetch('/api/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, who: state.who, selected })
+    }).catch(_ => {});
+  }
 
   renderGrid();
   updateCounts();
@@ -662,21 +1046,94 @@ function updateCounts() {
   $('#sideBadgeCount').textContent = (g + b - c);
 }
 
+const ROLE_LABEL = { groom: '신랑', bride: '신부' };
+const ROLE_COLOR = { groom: '#3B82F6', bride: '#EC4899' };
+
+function renderLightboxExtra(photoId) {
+  const myRating = (state.ratings[photoId] && state.ratings[photoId][state.who]) || 0;
+  const starsEl = $('#lbStars');
+  starsEl.innerHTML = '';
+  for (let i = 1; i <= 5; i++) {
+    const star = document.createElement('span');
+    star.textContent = i <= myRating ? '★' : '☆';
+    star.style.color = i <= myRating ? '#FBBF24' : '#6B7280';
+    star.onclick = () => setRating(photoId, i);
+    starsEl.appendChild(star);
+  }
+
+  const notesEl = $('#lbNotes');
+  const notes = state.notes[photoId] || [];
+  notesEl.innerHTML = notes.length
+    ? notes.map(n => `<div style="font-size:12px;"><b style="color:${esc(n.userColor || '#fff')}">${esc(n.userName || '참여자')}</b> <span style="color:#9CA3AF;">${esc(n.time || '')}</span><br>${esc(n.text)}</div>`).join('')
+    : '<div style="font-size:12px; color:#6B7280;">아직 등록된 보정요청이 없어요.</div>';
+}
+
+function setRating(photoId, rating) {
+  if (!state.ratings[photoId]) state.ratings[photoId] = {};
+  state.ratings[photoId][state.who] = rating;
+
+  if (ROOM_MODE) {
+    persistProjectState();
+  } else {
+    fetch('/api/rating/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: photoId, rating, who: state.who })
+    }).catch(_ => {});
+  }
+  renderLightboxExtra(photoId);
+}
+
+function saveNote() {
+  const photoId = state.lbId;
+  if (!photoId) return;
+  const input = $('#noteInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const note = {
+    id: 'n_' + Date.now(),
+    user: state.who,
+    userName: ROLE_LABEL[state.who] || state.who,
+    userColor: ROLE_COLOR[state.who] || '#3B82F6',
+    text,
+    time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  };
+
+  if (!state.notes[photoId]) state.notes[photoId] = [];
+  state.notes[photoId].push(note);
+  input.value = '';
+
+  if (ROOM_MODE) {
+    persistProjectState();
+  } else {
+    fetch('/api/note/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: photoId, text: note.text, who: state.who })
+    }).catch(_ => {});
+  }
+  renderLightboxExtra(photoId);
+}
+
 function openLightbox(id) {
   const p = state.byId.get(id);
   if (!p) return;
   state.lbId = id;
-  
+
   $('#lbImg').src = p.url;
   $('#lbTitle').textContent = p.name;
-  
+
   const isPicked = state.sel[state.who]?.has(id);
   $('#lbPickBtn').textContent = isPicked ? '♥ 내 선택 취소' : '♡ 내 선택 저장';
-  
+  renderLightboxExtra(id);
+
   $('#lb').classList.add('open');
 }
 
 $('#lbClose').onclick = () => $('#lb').classList.remove('open');
+$('#noteSaveBtn').onclick = saveNote;
+$('#noteInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveNote(); });
 $('#lbPickBtn').onclick = () => {
   if (state.lbId) toggleSelect(state.lbId);
 };
@@ -703,7 +1160,7 @@ function renderSidebar() {
     const item = document.createElement('div');
     item.className = 'side-cell';
     item.innerHTML = `
-      <img src="${p.url}" alt="${p.name}">
+      <img src="${p.url}" alt="${esc(p.name)}">
       <span class="side-badge">${state.sideTab === 'common' ? '중복' : state.sideTab === 'groom' ? '신랑' : '신부'}</span>
     `;
     item.onclick = () => openLightbox(id);
@@ -756,8 +1213,15 @@ $('#views').onclick = (e) => {
 $('#btnSmartAnalyze').onclick = runSmartAnalysisAsync;
 $('#btnFolderOpen').onclick = openFolderPicker;
 
-// 시작 시 사진 2,382장 자동 불러오기
-loadPhotosFromServer();
+// 진입 모드에 따라 분기: 셀렉룸 호스트 / 셀렉룸 게스트 / 레거시 로컬 서버 모드
+if (room.isHost) {
+  $('#btnFolderOpen').textContent = '📁 사진 폴더 선택 → 셀렉룸 시작';
+  renderGrid();
+} else if (room.isGuest && PROJECT_ID_FROM_URL) {
+  initRoomGuest();
+} else {
+  loadPhotosFromServer();
+}
 </script>
 </body>
 </html>

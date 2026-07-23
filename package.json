@@ -9,6 +9,7 @@
     "tunnel": "node server.js --tunnel"
   },
   "dependencies": {
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "@supabase/supabase-js": "^2.45.4"
   }
 }

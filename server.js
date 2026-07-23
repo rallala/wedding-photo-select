@@ -17,6 +17,15 @@ const crypto = require('crypto');
 const os = require('os');
 const { URL } = require('url');
 
+// ---------- Supabase Auth (관리자 권한: SERVICE_ROLE_KEY, 절대 클라이언트에 노출 금지) ----------
+let supabaseAdmin = null;
+if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  const { createClient } = require('@supabase/supabase-js');
+  supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+}
+
 // ---------- 설정 ----------
 let PORT = Number(process.env.PORT) || 3000;
 const PIN = String(process.env.PIN || Math.floor(1000 + Math.random() * 9000));
@@ -437,6 +446,18 @@ function serveFile(res, abs) {
     fs.createReadStream(abs).pipe(res);
   });
 }
+// 프론트에서 쓰는 Supabase 공개 키(anon key)를 서빙 시점에 주입 (소스에 하드코딩하지 않기 위함)
+function serveHtmlWithEnv(res, abs) {
+  fs.readFile(abs, 'utf8', (err, html) => {
+    if (err) { res.writeHead(404); return res.end('not found'); }
+    const out = html
+      .replace(/__SUPABASE_URL__/g, process.env.SUPABASE_URL || '')
+      .replace(/__SUPABASE_ANON_KEY__/g, process.env.SUPABASE_ANON_KEY || '')
+      .replace(/__KAKAO_JS_KEY__/g, process.env.KAKAO_JS_KEY || '');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(out);
+  });
+}
 async function serveThumb(res, abs, rel) {
   if (!sharp) return serveFile(res, abs);
   try {
@@ -474,7 +495,6 @@ function copySelected(ids, mode, destName) {
 // ---------- HTTP ----------
 const INDEX_PATH = path.join(APP_DIR, 'index.html');
 const LANDING_PATH = path.join(APP_DIR, 'landing.html');
-const ZIP_PATH = path.join(APP_DIR, 'PicSelec_Windows_v1.0.zip');
 
 const server = http.createServer(async (req, res) => {
   touchClient(req);
@@ -483,16 +503,9 @@ const server = http.createServer(async (req, res) => {
   const p = u.pathname;
 
   // 루트 접속 시 메인 랜딩페이지(landing.html)가 표시됨!
-  if (p === '/' || p === '/landing' || p === '/landing.html') return serveFile(res, LANDING_PATH);
-  if (p === '/app' || p === '/select' || p === '/index.html') return serveFile(res, INDEX_PATH);
-  if (p === '/PicSelec_Windows_v1.0.zip') return serveFile(res, ZIP_PATH);
+  if (p === '/' || p === '/landing' || p === '/landing.html') return serveHtmlWithEnv(res, LANDING_PATH);
+  if (p === '/app' || p === '/select' || p === '/index.html') return serveHtmlWithEnv(res, INDEX_PATH);
   if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
-  if (p === '/api/auth/signup' && req.method === 'POST') {
-    const body = await parseJson(req);
-    const email = (body && body.email) || 'user@example.com';
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, user: { email, credits: 10, name: email.split('@')[0] } }));
-  }
   if (p === '/img' || p === '/thumb') {
     const abs = safeAbs(u.searchParams.get('path') || '');
     if (!abs) { res.writeHead(403); return res.end('forbidden'); }
@@ -527,129 +540,30 @@ const server = http.createServer(async (req, res) => {
     cacheStatus,
     activeUsers: getActiveUsersList()
   });
-  // 회원가입 API (자체 이메일 + 성별 + 출생년도 + 생일)
-  if (p === '/api/auth/signup' && req.method === 'POST') {
-    const b = await readBody(req);
-    const { email, password, name, gender, birth_year, birthday, provider } = b;
+  // 자체 회원가입/로그인/비밀번호 재설정은 브라우저에서 Supabase Auth(supabase-js)로 직접 처리합니다.
+  // (landing.html 참고: supabase.auth.signUp / signInWithPassword / resetPasswordForEmail / updateUser)
+  // 서버는 세션 토큰을 발급하지 않고, Supabase가 내려준 access_token만 검증합니다.
 
-    // 비밀번호 검증 (8자 이상, 영문+숫자+특수문자 포함)
-    const passRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&^])[A-Za-z\d@$!%*#?&^]{8,}$/;
-    if (!passRegex.test(password)) {
-      return sendJSON(res, { ok: false, error: '비밀번호는 8자 이상, 영문자, 숫자, 특수문자(!@#$%^&*)를 모두 포함해야 합니다.' }, 400);
-    }
-
-    // 비밀번호 SHA-256 단방향 솔트 암호화 (복호화 불가능한 안전한 해싱)
-    const crypto = require('crypto');
-    const passwordHash = crypto.createHash('sha256').update(password + 'picselec_salt_2026').digest('hex');
-
-    const t = newToken();
-    sessions.add(t);
-    saveSessions();
-
-    const userObj = {
-      email,
-      password_hash: passwordHash,
-      name: name || email.split('@')[0],
-      gender: gender || 'male',
-      birth_year: birth_year || 1995,
-      birthday: birthday || '05-20',
-      provider: provider || 'email'
-    };
-
-    // Supabase DB가 설정된 경우 비동기 저장 시도
-    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
-      fetch(`${process.env.SUPABASE_URL}/rest/v1/users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': process.env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify(userObj)
-      }).catch(e => console.error('Supabase user insert error:', e.message));
-    }
-
-    return sendJSON(res, { ok: true, user: userObj }, 200, {
-      'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
-    });
-  }
-
-  // 로그인 API
-  if (p === '/api/auth/login' && req.method === 'POST') {
-    const b = await readBody(req);
-    const { email } = b;
-    const t = newToken();
-    sessions.add(t);
-    saveSessions();
-
-    const userObj = { email, name: email ? email.split('@')[0] : '회원', gender: 'male' };
-    return sendJSON(res, { ok: true, user: userObj }, 200, {
-      'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
-    });
-  }
-
-  // 로그아웃 API
-  if (p === '/api/auth/logout' && req.method === 'POST') {
-    return sendJSON(res, { ok: true }, 200, {
-      'Set-Cookie': `wps_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`
-    });
-  }
-
-  // 비밀번호 재설정/변경 API (SHA-256 암호화 업데이트)
-  if (p === '/api/auth/reset-password' && req.method === 'POST') {
-    const b = await readBody(req);
-    const { email, new_password } = b;
-
-    if (!email || !new_password) {
-      return sendJSON(res, { ok: false, error: '이메일과 새 비밀번호를 입력해 주세요.' }, 400);
-    }
-
-    const passRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&^])[A-Za-z\d@$!%*#?&^]{8,}$/;
-    if (!passRegex.test(new_password)) {
-      return sendJSON(res, { ok: false, error: '새 비밀번호는 8자 이상, 영문자, 숫자, 특수문자(!@#$%^&*)를 모두 포함해야 합니다.' }, 400);
-    }
-
-    const crypto = require('crypto');
-    const newPasswordHash = crypto.createHash('sha256').update(new_password + 'picselec_salt_2026').digest('hex');
-
-    // Supabase DB 비밀번호 업데이트
-    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
-      fetch(`${process.env.SUPABASE_URL}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': process.env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ password_hash: newPasswordHash })
-      }).catch(e => console.error('Supabase password reset update error:', e.message));
-    }
-
-    return sendJSON(res, { ok: true, message: '비밀번호가 성공적으로 변경되었습니다.' });
-  }
-
-  // 회원 탈퇴 / 계정 삭제 API
+  // 회원 탈퇴 / 계정 삭제 API — 반드시 "본인의" Supabase 세션으로만 본인 계정을 삭제
   if (p === '/api/auth/delete-account' && req.method === 'POST') {
-    const b = await readBody(req);
-    const { email } = b;
+    if (!supabaseAdmin) return sendJSON(res, { ok: false, error: '서버에 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.' }, 500);
 
-    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && email) {
-      fetch(`${process.env.SUPABASE_URL}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
-        method: 'DELETE',
-        headers: {
-          'apikey': process.env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
-        }
-      }).catch(e => console.error('Supabase delete user error:', e.message));
-    }
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return sendJSON(res, { ok: false, error: '로그인이 필요합니다.' }, 401);
 
-    return sendJSON(res, { ok: true, message: '회원 탈퇴 및 계정 삭제가 완료되었습니다.' }, 200, {
-      'Set-Cookie': `wps_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`
-    });
+    // 클라이언트가 보낸 email은 절대 신뢰하지 않고, 토큰으로부터 검증된 본인 계정만 사용
+    const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token);
+    if (userErr || !userData?.user) return sendJSON(res, { ok: false, error: '세션이 유효하지 않습니다.' }, 401);
+
+    const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(userData.user.id);
+    if (delErr) return sendJSON(res, { ok: false, error: delErr.message }, 500);
+
+    return sendJSON(res, { ok: true, message: '회원 탈퇴 및 계정 삭제가 완료되었습니다.' });
   }
 
-  // 3대 소셜 로그인 리다이렉트 및 콜백 (카카오, 네이버, 구글)
+  // 네이버 로그인 — Supabase Auth 기본 프로바이더가 아니라 자체 OAuth 교환 후 Supabase 유저로 연동(federate)
+  // (카카오는 Supabase Auth 기본 프로바이더라 서버 없이 landing.html에서 signInWithOAuth로 바로 처리합니다)
   if (p.startsWith('/api/auth/')) {
     const actionPath = p.replace('/api/auth/', '');
     const proto = req.headers['x-forwarded-proto'] || 'https';
@@ -669,36 +583,7 @@ const server = http.createServer(async (req, res) => {
       let userBirthday = null;
 
       try {
-        // 1. 카카오 토큰 & 프로필 조회
-        if (provider === 'kakao' && code && process.env.KAKAO_CLIENT_ID) {
-          const bodyParams = new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: process.env.KAKAO_CLIENT_ID,
-            redirect_uri: `${baseUrl}/api/auth/kakao/callback`,
-            code
-          });
-          if (process.env.KAKAO_CLIENT_SECRET) {
-            bodyParams.append('client_secret', process.env.KAKAO_CLIENT_SECRET);
-          }
-          const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
-            body: bodyParams
-          });
-          const tokenData = await tokenRes.json();
-          if (tokenData.access_token) {
-            const profileRes = await fetch('https://kapi.kakao.com/v2/user/me', {
-              headers: { Authorization: `Bearer ${tokenData.access_token}` }
-            });
-            const profileData = await profileRes.json();
-            const kakaoAcc = profileData.kakao_account || {};
-            const prof = kakaoAcc.profile || profileData.properties || {};
-            userName = prof.nickname || `카카오_${String(profileData.id || Date.now()).slice(-4)}`;
-            userEmail = kakaoAcc.email || `kakao_${profileData.id || Date.now()}@picselec.com`;
-          }
-        }
-
-        // 2. 네이버 토큰 & 프로필 조회
+        // 네이버 토큰 & 프로필 조회
         if (provider === 'naver' && code && process.env.NAVER_CLIENT_ID) {
           const clientSecret = process.env.NAVER_CLIENT_SECRET || '';
           const tokenRes = await fetch(`https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=${encodeURIComponent(process.env.NAVER_CLIENT_ID)}&client_secret=${encodeURIComponent(clientSecret)}&code=${encodeURIComponent(code)}&state=picselec_state`);
@@ -717,89 +602,53 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // 3. 구글 토큰 & 프로필 조회
-        if (provider === 'google' && code && process.env.GOOGLE_CLIENT_ID) {
-          const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
-          const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              code,
-              client_id: process.env.GOOGLE_CLIENT_ID,
-              client_secret: clientSecret,
-              redirect_uri: `${baseUrl}/api/auth/google/callback`,
-              grant_type: 'authorization_code'
-            })
-          });
-          const tokenData = await tokenRes.json();
-          if (tokenData.access_token) {
-            const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-              headers: { Authorization: `Bearer ${tokenData.access_token}` }
-            });
-            const profileData = await profileRes.json();
-            userName = profileData.name || profileData.given_name || `구글_${String(profileData.id || Date.now()).slice(-4)}`;
-            userEmail = profileData.email || `google_${String(profileData.id || Date.now()).slice(-4)}@picselec.com`;
-          }
-        }
       } catch (err) {
         console.error('OAuth profile fetch error:', err.message);
       }
 
-      // Supabase DB에 회원 정보 즉시 저장 (Supabase 연동 시)
-      if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
-        fetch(`${process.env.SUPABASE_URL}/rest/v1/users`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': process.env.SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-            'Prefer': 'resolution=merge-duplicates,return=minimal'
-          },
-          body: JSON.stringify({
-            email: userEmail,
-            name: userName,
-            gender: userGender || 'male',
-            birth_year: userBirthYear || 1995,
-            birthday: userBirthday || '05-20',
-            provider
-          })
-        }).catch(e => console.error('Supabase social user insert error:', e.message));
+      // Supabase Auth에 실제 유저로 연동(federate): 없으면 생성, 있으면 매직링크 토큰 발급
+      // (네이버는 Supabase Auth 기본 프로바이더가 아니라서 이 방식으로 우회합니다.
+      //  generateLink는 최초 1회는 options.data로 user_metadata를 채우지만, 이미 가입된 유저의
+      //  메타데이터 최신화가 필요하면 admin.updateUserById()를 추가로 호출해야 할 수 있습니다.)
+      if (!supabaseAdmin) {
+        res.writeHead(302, { 'Location': `/?social_auth=need_key&provider=${provider}&reason=no_supabase` });
+        return res.end();
       }
 
-      const t = newToken();
-      sessions.add(t);
-      saveSessions();
+      const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: userEmail,
+        options: {
+          data: {
+            name: userName,
+            gender: userGender || 'male',
+            birth_year: userBirthYear || null,
+            birthday: userBirthday || null,
+            provider
+          }
+        }
+      });
+
+      if (linkErr || !linkData?.properties?.hashed_token) {
+        console.error('Supabase generateLink error:', linkErr?.message);
+        res.writeHead(302, { 'Location': `/?social_auth=error&provider=${provider}` });
+        return res.end();
+      }
 
       const redirectParams = new URLSearchParams({
-        social_auth: 'success',
+        social_verify: '1',
         provider,
         email: userEmail,
-        name: userName
+        token_hash: linkData.properties.hashed_token
       });
-      if (userGender) redirectParams.set('gender', userGender);
-      if (userBirthYear) redirectParams.set('birth_year', userBirthYear);
-      if (userBirthday) redirectParams.set('birthday', userBirthday);
 
-      res.writeHead(302, {
-        'Location': `/?${redirectParams.toString()}`,
-        'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
-      });
+      res.writeHead(302, { 'Location': `/?${redirectParams.toString()}` });
       return res.end();
     }
 
     const provider = actionPath;
 
-    // 1. 카카오 OAuth
-    if (provider === 'kakao') {
-      const clientId = process.env.KAKAO_CLIENT_ID;
-      if (clientId) {
-        const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(baseUrl + '/api/auth/kakao/callback')}&response_type=code`;
-        res.writeHead(302, { 'Location': kakaoAuthUrl });
-        return res.end();
-      }
-    }
-
-    // 2. 네이버 OAuth
+    // 네이버 OAuth
     if (provider === 'naver') {
       const clientId = process.env.NAVER_CLIENT_ID;
       if (clientId) {
@@ -809,18 +658,11 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 3. 구글 OAuth
-    if (provider === 'google') {
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      if (clientId) {
-        const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(baseUrl + '/api/auth/google/callback')}&response_type=code&scope=email%20profile`;
-        res.writeHead(302, { 'Location': googleAuthUrl });
-        return res.end();
-      }
-    }
+    // 구글/카카오는 Supabase Auth 기본 프로바이더라 서버를 거치지 않고 클라이언트에서
+    // supabase.auth.signInWithOAuth({ provider })로 바로 처리합니다.
 
     // 키가 아직 Vercel에 세팅되지 않은 경우
-    if (['kakao', 'naver', 'google'].includes(provider)) {
+    if (provider === 'naver') {
       res.writeHead(302, { 'Location': `/?social_auth=need_key&provider=${provider}` });
       return res.end();
     }
