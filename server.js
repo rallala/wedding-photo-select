@@ -576,8 +576,9 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, { ok: true, message: '회원 탈퇴 및 계정 삭제가 완료되었습니다.' });
   }
 
-  // 네이버 로그인 — Supabase Auth 기본 프로바이더가 아니라 자체 OAuth 교환 후 Supabase 유저로 연동(federate)
-  // (카카오는 Supabase Auth 기본 프로바이더라 서버 없이 landing.html에서 signInWithOAuth로 바로 처리합니다)
+  // 카카오/네이버 로그인 — Supabase Auth의 Kakao 프로바이더는 이메일 동의항목(account_email)을
+  // 요구하는데, 비즈니스 인증이 안 된 카카오 앱은 그 동의항목 자체를 설정할 수 없어 KOE205로
+  // 막힙니다. 그래서 카카오도 네이버처럼 자체 OAuth 교환 후 Supabase 유저로 연동(federate)합니다.
   if (p.startsWith('/api/auth/')) {
     const actionPath = p.replace('/api/auth/', '');
     const proto = req.headers['x-forwarded-proto'] || 'https';
@@ -595,8 +596,39 @@ const server = http.createServer(async (req, res) => {
       let userGender = null;
       let userBirthYear = null;
       let userBirthday = null;
+      let needEmail = true; // 실제 이메일을 받으면 false로 바뀜 — 마이페이지에서 추가 입력 요청용
 
       try {
+        // 카카오 토큰 & 프로필 조회 (이메일 동의항목이 없을 수 있어 없으면 임시 이메일로 대체)
+        if (provider === 'kakao' && code && process.env.KAKAO_CLIENT_ID) {
+          const bodyParams = new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: process.env.KAKAO_CLIENT_ID,
+            redirect_uri: `${baseUrl}/api/auth/kakao/callback`,
+            code
+          });
+          if (process.env.KAKAO_CLIENT_SECRET) {
+            bodyParams.append('client_secret', process.env.KAKAO_CLIENT_SECRET);
+          }
+          const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+            body: bodyParams
+          });
+          const tokenData = await tokenRes.json();
+          if (tokenData.access_token) {
+            const profileRes = await fetch('https://kapi.kakao.com/v2/user/me', {
+              headers: { Authorization: `Bearer ${tokenData.access_token}` }
+            });
+            const profileData = await profileRes.json();
+            const kakaoAcc = profileData.kakao_account || {};
+            const prof = kakaoAcc.profile || profileData.properties || {};
+            userName = prof.nickname || `카카오_${String(profileData.id || Date.now()).slice(-4)}`;
+            if (kakaoAcc.email) { userEmail = kakaoAcc.email; needEmail = false; }
+            else { userEmail = `kakao_${profileData.id || Date.now()}@picselec.com`; }
+          }
+        }
+
         // 네이버 토큰 & 프로필 조회
         if (provider === 'naver' && code && process.env.NAVER_CLIENT_ID) {
           const clientSecret = process.env.NAVER_CLIENT_SECRET || '';
@@ -609,7 +641,8 @@ const server = http.createServer(async (req, res) => {
             const profileData = await profileRes.json();
             const nResp = profileData.response || {};
             userName = nResp.name || nResp.nickname || `네이버_${String(nResp.id || Date.now()).slice(-4)}`;
-            userEmail = nResp.email || `naver_${String(nResp.id || Date.now()).slice(-4)}@picselec.com`;
+            if (nResp.email) { userEmail = nResp.email; needEmail = false; }
+            else { userEmail = `naver_${String(nResp.id || Date.now()).slice(-4)}@picselec.com`; }
             if (nResp.gender) userGender = (nResp.gender === 'F' || nResp.gender === 'female') ? 'female' : 'male';
             if (nResp.birthyear) userBirthYear = nResp.birthyear;
             if (nResp.birthday) userBirthday = nResp.birthday;
@@ -621,9 +654,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Supabase Auth에 실제 유저로 연동(federate): 없으면 생성, 있으면 매직링크 토큰 발급
-      // (네이버는 Supabase Auth 기본 프로바이더가 아니라서 이 방식으로 우회합니다.
-      //  generateLink는 최초 1회는 options.data로 user_metadata를 채우지만, 이미 가입된 유저의
-      //  메타데이터 최신화가 필요하면 admin.updateUserById()를 추가로 호출해야 할 수 있습니다.)
+      // (카카오/네이버는 Supabase Auth 기본 프로바이더가 아니거나(네이버) 이메일 동의항목을
+      //  쓸 수 없어서(카카오) 이 방식으로 우회합니다. generateLink는 최초 1회는 options.data로
+      //  user_metadata를 채우지만, 이미 가입된 유저의 메타데이터 최신화가 필요하면
+      //  admin.updateUserById()를 추가로 호출해야 할 수 있습니다.)
       if (!supabaseAdmin) {
         res.writeHead(302, { 'Location': `/?social_auth=need_key&provider=${provider}&reason=no_supabase` });
         return res.end();
@@ -638,7 +672,8 @@ const server = http.createServer(async (req, res) => {
             gender: userGender || 'male',
             birth_year: userBirthYear || null,
             birthday: userBirthday || null,
-            provider
+            provider,
+            need_email: needEmail
           }
         }
       });
@@ -662,6 +697,16 @@ const server = http.createServer(async (req, res) => {
 
     const provider = actionPath;
 
+    // 카카오 OAuth
+    if (provider === 'kakao') {
+      const clientId = process.env.KAKAO_CLIENT_ID;
+      if (clientId) {
+        const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(baseUrl + '/api/auth/kakao/callback')}&response_type=code`;
+        res.writeHead(302, { 'Location': kakaoAuthUrl });
+        return res.end();
+      }
+    }
+
     // 네이버 OAuth
     if (provider === 'naver') {
       const clientId = process.env.NAVER_CLIENT_ID;
@@ -672,11 +717,11 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 구글/카카오는 Supabase Auth 기본 프로바이더라 서버를 거치지 않고 클라이언트에서
-    // supabase.auth.signInWithOAuth({ provider })로 바로 처리합니다.
+    // 구글은 Supabase Auth 기본 프로바이더라 서버를 거치지 않고 클라이언트에서
+    // supabase.auth.signInWithOAuth({ provider: 'google' })로 바로 처리합니다.
 
     // 키가 아직 Vercel에 세팅되지 않은 경우
-    if (provider === 'naver') {
+    if (['kakao', 'naver'].includes(provider)) {
       res.writeHead(302, { 'Location': `/?social_auth=need_key&provider=${provider}` });
       return res.end();
     }

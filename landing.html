@@ -622,6 +622,12 @@
     <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">원활한 웨딩 셀렉 서비스를 위해 성별과 생년월일을 선택해 주세요 (1초 완료)</p>
     
     <form class="form-stack" onsubmit="handleSocialExtraSubmit(event)">
+      <div class="form-field" id="extraEmailField" style="display:none;">
+        <label>연락 가능한 이메일 *</label>
+        <input type="email" id="extraEmail" placeholder="example@wedding.com">
+        <p style="font-size:11px; color:var(--text-secondary); margin-top:4px;">가입하신 계정이 이메일 제공에 동의하지 않아, 안내 발송을 위해 별도로 받고 있어요.</p>
+      </div>
+
       <div class="form-field">
         <label>성별 선택 *</label>
         <div class="gender-selector">
@@ -756,15 +762,18 @@ function userFromSession(session) {
   const u = session.user;
   const meta = u.user_metadata || {};
   const provider = meta.provider || 'email';
+  const needEmail = provider !== 'email' && !!meta.need_email && !meta.contact_email;
   return {
     id: u.id,
     email: u.email,
+    contactEmail: meta.contact_email || null,
     name: meta.name || (u.email ? u.email.split('@')[0] : '회원'),
     gender: meta.gender || 'male',
     birth_year: meta.birth_year || null,
     birthday: meta.birthday || null,
     provider,
-    need_social_extra: provider !== 'email' && (!meta.gender || !meta.birth_year)
+    needEmail,
+    need_social_extra: provider !== 'email' && (!meta.gender || !meta.birth_year || needEmail)
   };
 }
 
@@ -775,6 +784,8 @@ function checkAuthStatus() {
     document.getElementById('headerUserName').textContent = currentUser.name;
 
     if (currentUser.need_social_extra) {
+      document.getElementById('extraEmailField').style.display = currentUser.needEmail ? 'block' : 'none';
+      document.getElementById('extraEmail').required = currentUser.needEmail;
       document.getElementById('modalSocialExtra').classList.add('open');
     }
   } else {
@@ -899,7 +910,7 @@ function openMyPageModal() {
 
   const provMap = { email: '✉️ 자체 이메일', kakao: '🟡 카카오', naver: '🟢 네이버', google: '🔴 구글' };
   document.getElementById('myPageProviderBadge').textContent = provMap[currentUser.provider] || `${currentUser.provider || '소셜'} 회원`;
-  document.getElementById('myPageEmail').textContent = currentUser.email || '미등록 이메일';
+  document.getElementById('myPageEmail').textContent = currentUser.contactEmail || currentUser.email || '미등록 이메일';
   document.getElementById('myPageName').textContent = currentUser.name || '회원';
   document.getElementById('myPageGender').textContent = (currentUser.gender === 'female') ? '🩷 여성' : '💙 남성';
 
@@ -1068,8 +1079,16 @@ async function handleSocialExtraSubmit(e) {
   e.preventDefault();
   const birthYear = parseInt(document.getElementById('extraBirthYear').value, 10);
   const birthday = document.getElementById('extraBirthday').value.trim();
+  const emailField = document.getElementById('extraEmailField');
+  const contactEmail = emailField.style.display !== 'none' ? document.getElementById('extraEmail').value.trim() : null;
 
-  const { error } = await sb.auth.updateUser({ data: { gender: selectedExtraGender, birth_year: birthYear, birthday } });
+  // contact_email은 로그인용 Supabase Auth 이메일과 별개인 "연락처"일 뿐이라 별도 메타데이터로 저장합니다.
+  // (실제 로그인 이메일을 바꾸면 우리가 만든 임시 @picselec.com 주소로도 확인 메일을 보내야 해서
+  //  본인이 받을 수 없는 주소가 되어 버립니다.)
+  const data = { gender: selectedExtraGender, birth_year: birthYear, birthday };
+  if (contactEmail) { data.contact_email = contactEmail; data.need_email = false; }
+
+  const { error } = await sb.auth.updateUser({ data });
   if (error) { alert(error.message || '저장 중 오류가 발생했습니다.'); return; }
 
   document.getElementById('modalSocialExtra').classList.remove('open');
@@ -1077,11 +1096,11 @@ async function handleSocialExtraSubmit(e) {
 }
 
 function handleSocialAuth(provider) {
-  if (provider === 'google' || provider === 'kakao') {
-    // 구글/카카오는 Supabase Auth 기본 프로바이더라 서버를 거치지 않고 바로 연결됩니다.
+  if (provider === 'google') {
+    // 구글은 Supabase Auth 기본 프로바이더라 서버를 거치지 않고 바로 연결됩니다.
     sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } });
   } else {
-    // 네이버는 Supabase 기본 프로바이더가 아니라 서버 경유 OAuth 교환이 필요합니다.
+    // 카카오(이메일 동의항목에 비즈 인증 필요)와 네이버는 서버 경유 OAuth 교환이 필요합니다.
     window.location.href = `/api/auth/${provider}`;
   }
 }

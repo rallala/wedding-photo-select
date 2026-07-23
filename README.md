@@ -47,11 +47,12 @@ docker run --rm -it -p 3000:3000 -v "%cd%":/app -w /app node:24-alpine node serv
 |---|---|---|
 | `SUPABASE_URL` | Supabase 프로젝트 URL | Supabase 대시보드 → Project Settings → API |
 | `SUPABASE_ANON_KEY` | 브라우저(landing.html/index.html)에 주입되는 공개 키 | 위와 동일 (anon/public key) |
-| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 관리자 키. **절대 클라이언트에 노출 금지** | 위와 동일 (service_role key) — 계정 삭제, 네이버 로그인 연동에 사용 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 관리자 키. **절대 클라이언트에 노출 금지** | 위와 동일 (service_role key) — 계정 삭제, 카카오/네이버 로그인 연동에 사용 |
+| `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 | 카카오 개발자 콘솔 |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 네이버 로그인 | 네이버 개발자 센터 |
 | `KAKAO_JS_KEY` | 셀렉룸 접속 코드를 "카카오톡으로 보내기" 버튼용 (로그인과는 무관) | 카카오 개발자 콘솔 → 앱 키 → JavaScript 키 (REST API 키와 다름). 콘솔의 "플랫폼 → Web"에 배포 도메인을 등록해야 동작합니다. 설정 안 해도 클립보드 복사로 자동 대체됩니다. |
 
-구글·카카오 로그인은 Supabase Auth의 기본 제공 프로바이더라, Supabase 대시보드(Authentication → Sign In / Providers)에서 각각 Client ID/Secret을 등록하면 됩니다(별도 서버 환경변수 불필요). 네이버는 Supabase 기본 프로바이더가 아니라서 위 `NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET`을 통한 자체 OAuth 연동을 그대로 사용합니다.
+구글 로그인은 Supabase Auth의 기본 제공 프로바이더라 Supabase 대시보드(Authentication → Sign In / Providers)에서 Client ID/Secret만 등록하면 됩니다(별도 서버 환경변수 불필요). 카카오는 Supabase Auth에도 있지만 이메일 동의항목(`account_email`)을 요구하는데, **비즈니스 인증이 안 된 카카오 앱은 이 동의항목 자체를 설정할 수 없어** Supabase 경유 로그인이 `KOE205` 에러로 막힙니다 — 그래서 카카오도 네이버처럼 위 `KAKAO_CLIENT_ID`/`KAKAO_CLIENT_SECRET`을 통한 자체 OAuth 연동을 씁니다. 이 경우 카카오/네이버가 이메일을 안 주면 임시 이메일로 가입되고, 로그인 후 뜨는 추가 정보 모달에서 실제 연락 이메일을 별도로 받아 `user_metadata.contact_email`에 저장합니다(로그인용 이메일 자체는 바꾸지 않음 — 바꾸면 확인 메일을 본인이 받을 수 없는 임시 주소로 보내게 되어버림).
 
 비밀번호 재설정 이메일이 실제로 발송되려면 Supabase 대시보드 → Authentication → Email Templates/SMTP 설정도 확인해 주세요(기본 제공 이메일은 발송량 제한이 있어 실서비스는 커스텀 SMTP 권장).
 
