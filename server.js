@@ -669,15 +669,19 @@ const server = http.createServer(async (req, res) => {
       try {
         // 1. 카카오 토큰 & 프로필 조회
         if (provider === 'kakao' && code && process.env.KAKAO_CLIENT_ID) {
+          const bodyParams = new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: process.env.KAKAO_CLIENT_ID,
+            redirect_uri: `${baseUrl}/api/auth/kakao/callback`,
+            code
+          });
+          if (process.env.KAKAO_CLIENT_SECRET) {
+            bodyParams.append('client_secret', process.env.KAKAO_CLIENT_SECRET);
+          }
           const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
-            body: new URLSearchParams({
-              grant_type: 'authorization_code',
-              client_id: process.env.KAKAO_CLIENT_ID,
-              redirect_uri: `${baseUrl}/api/auth/kakao/callback`,
-              code
-            })
+            body: bodyParams
           });
           const tokenData = await tokenRes.json();
           if (tokenData.access_token) {

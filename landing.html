@@ -731,6 +731,35 @@ function initYearSelect(elId) {
 initYearSelect('signupBirthYear');
 initYearSelect('extraBirthYear');
 
+// 1. URL 파라미터 소셜로그인 리다이렉트 성공 체크 (인증 결과 동기화)
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('social_auth') === 'success') {
+  const email = urlParams.get('email') || 'social_user@picselec.com';
+  const name = urlParams.get('name') || '소셜 회원';
+  const provider = urlParams.get('provider') || 'kakao';
+  const gender = urlParams.get('gender') || null;
+  const birthYear = urlParams.get('birth_year') || null;
+  const birthday = urlParams.get('birthday') || null;
+
+  currentUser = {
+    email,
+    name,
+    provider,
+    gender,
+    birth_year: birthYear,
+    birthday,
+    need_social_extra: (!gender || !birthYear)
+  };
+
+  localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
+  history.replaceState({}, document.title, window.location.pathname);
+}
+
+if (urlParams.get('social_auth') === 'need_key') {
+  const prov = urlParams.get('provider') || '소셜';
+  alert(`[${prov.toUpperCase()}] 로그인 연동 키(Client ID)를 Vercel 환경변수(Environment Variables)에 입력해 주시면 실제 ${prov} 공식 로그인 화면으로 연결됩니다!`);
+}
+
 function checkAuthStatus() {
   if (typeof currentUser === 'string') {
     currentUser = { email: currentUser + '@social.com', name: currentUser, provider: 'social' };
@@ -750,42 +779,6 @@ function checkAuthStatus() {
   }
 }
 checkAuthStatus();
-
-function closeSocialExtraModal() {
-  document.getElementById('modalSocialExtra').classList.remove('open');
-  if (currentUser) {
-    delete currentUser.need_social_extra;
-    localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
-  }
-}
-
-// URL 파라미터 소셜로그인 리다이렉트 성공 체크
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('social_auth') === 'success') {
-  const email = urlParams.get('email') || 'social_user@picselec.com';
-  const name = urlParams.get('name') || '소셜 회원';
-  const provider = urlParams.get('provider') || 'kakao';
-  const gender = urlParams.get('gender') || null;
-  const birthYear = urlParams.get('birth_year') || null;
-  const birthday = urlParams.get('birthday') || null;
-
-  const newUser = {
-    email,
-    name,
-    provider,
-    gender,
-    birth_year: birthYear,
-    birthday,
-    need_social_extra: (!gender || !birthYear)
-  };
-
-  onAuthSuccess(newUser);
-  history.replaceState({}, document.title, window.location.pathname);
-}
-if (urlParams.get('social_auth') === 'need_key') {
-  const prov = urlParams.get('provider') || '소셜';
-  alert(`[${prov.toUpperCase()}] 로그인 연동 키(Client ID)를 Vercel 환경변수(Environment Variables)에 입력해 주시면 실제 ${prov} 공식 로그인 화면으로 연결됩니다!`);
-}
 if (urlParams.get('naver_proof') === 'true') {
   openAuthModal('signup');
   setTimeout(() => {
