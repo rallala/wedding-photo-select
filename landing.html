@@ -868,11 +868,11 @@ sb.auth.onAuthStateChange((event, session) => {
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('social_verify') === '1') {
   const tokenHash = urlParams.get('token_hash');
-  const email = urlParams.get('email');
   const provider = urlParams.get('provider') || '';
   history.replaceState({}, document.title, window.location.pathname);
-  if (tokenHash && email) {
-    sb.auth.verifyOtp({ email, token_hash: tokenHash, type: 'magiclink' }).then(({ error }) => {
+  if (tokenHash) {
+    // token_hash로 검증할 땐 email/token을 같이 보내면 안 됨 (Supabase가 둘 중 하나만 허용)
+    sb.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' }).then(({ error }) => {
       if (error) { alert('로그인에 실패했습니다: ' + error.message); return; }
       setTimeout(() => alert(`🎉 ${provider.toUpperCase()} 계정으로 로그인되었습니다!`), 100);
     });
