@@ -609,6 +609,7 @@
 <!-- 2. ✨ 소셜 가입자 전용 1초 추가 프로필 완료 모달 (성별 & 생년월일 수집) -->
 <div class="modal-overlay" id="modalSocialExtra">
   <div class="modal-box">
+    <button class="modal-close" onclick="closeSocialExtraModal()">✕</button>
     <h2 style="font-size:20px; font-weight:700; margin-bottom:6px;">👋 환영합니다!</h2>
     <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">원활한 웨딩 셀렉 서비스를 위해 성별과 생년월일을 선택해 주세요 (1초 완료)</p>
     
@@ -686,8 +687,8 @@ function checkAuthStatus() {
     document.getElementById('userStatusBar').style.display = 'flex';
     document.getElementById('headerUserName').textContent = currentUser.name || currentUser.email.split('@')[0];
 
-    // 만약 소셜가입자인데 성별/생년월일이 없으면 1초 미니 모달 오픈
-    if (!currentUser.gender || !currentUser.birth_year) {
+    // 신규 소셜가입자인 경우에만 1초 미니 모달 오픈
+    if (currentUser.need_social_extra) {
       document.getElementById('modalSocialExtra').classList.add('open');
     }
   } else {
@@ -697,10 +698,18 @@ function checkAuthStatus() {
 }
 checkAuthStatus();
 
+function closeSocialExtraModal() {
+  document.getElementById('modalSocialExtra').classList.remove('open');
+  if (currentUser) {
+    delete currentUser.need_social_extra;
+    localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
+  }
+}
+
 // URL 파라미터 소셜로그인 리다이렉트 성공 체크 및 네이버 검수용 캡처 모드
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('social_auth') === 'success') {
-  onAuthSuccess({ email: 'kakao_user@picselec.com', name: '카카오 회원', provider: 'kakao' });
+  onAuthSuccess({ email: 'kakao_user@picselec.com', name: '카카오 회원', provider: 'kakao', need_social_extra: true });
 }
 if (urlParams.get('naver_proof') === 'true') {
   openAuthModal('signup');
@@ -868,6 +877,7 @@ function handleSocialExtraSubmit(e) {
     currentUser.gender = selectedExtraGender;
     currentUser.birth_year = birthYear;
     currentUser.birthday = birthday;
+    delete currentUser.need_social_extra;
     localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
   }
   document.getElementById('modalSocialExtra').classList.remove('open');
