@@ -18,6 +18,14 @@
 
 ## 🚀 실행 방법
 
+### 0. 새 컴퓨터에서 처음 시작할 때
+```bash
+git clone https://github.com/rallala/wedding-photo-select.git
+cd wedding-photo-select
+npm install
+cp .env.example .env   # 그다음 .env를 열어 Vercel 대시보드의 값들을 그대로 채워 넣기
+```
+
 ### 1. 로컬 실행
 ```bash
 npm start

@@ -10,6 +10,9 @@
  * 썸네일 가속(선택): npm install sharp
  */
 
+// 로컬 개발용: .env 파일이 있으면 읽어서 process.env에 채워줌 (Vercel은 자체 env var를 쓰니 무해하게 그냥 넘어감)
+try { require('dotenv').config(); } catch (_) {}
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');

@@ -6,3 +6,6 @@ dist_package/
 *.zip
 selections.json
 sessions.json
+.env
+.env.local
+.vercel
