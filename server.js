@@ -686,9 +686,53 @@ const server = http.createServer(async (req, res) => {
             });
             const profileData = await profileRes.json();
             const kakaoAcc = profileData.kakao_account || {};
-            const prof = kakaoAcc.profile || {};
-            userName = prof.nickname || `카카오_${profileData.id}`;
-            userEmail = kakaoAcc.email || `kakao_${profileData.id}@picselec.com`;
+            const prof = kakaoAcc.profile || profileData.properties || {};
+            userName = prof.nickname || `카카오_${String(profileData.id || Date.now()).slice(-4)}`;
+            userEmail = kakaoAcc.email || `kakao_${profileData.id || Date.now()}@picselec.com`;
+          }
+        }
+
+        // 2. 네이버 토큰 & 프로필 조회
+        if (provider === 'naver' && code && process.env.NAVER_CLIENT_ID) {
+          const clientSecret = process.env.NAVER_CLIENT_SECRET || '';
+          const tokenRes = await fetch(`https://nid.naver.com/oauth2.0/token?grant_type=authorization_code&client_id=${encodeURIComponent(process.env.NAVER_CLIENT_ID)}&client_secret=${encodeURIComponent(clientSecret)}&code=${encodeURIComponent(code)}&state=picselec_state`);
+          const tokenData = await tokenRes.json();
+          if (tokenData.access_token) {
+            const profileRes = await fetch('https://openapi.naver.com/v1/nid/me', {
+              headers: { Authorization: `Bearer ${tokenData.access_token}` }
+            });
+            const profileData = await profileRes.json();
+            const nResp = profileData.response || {};
+            userName = nResp.name || nResp.nickname || `네이버_${String(nResp.id || Date.now()).slice(-4)}`;
+            userEmail = nResp.email || `naver_${String(nResp.id || Date.now()).slice(-4)}@picselec.com`;
+            if (nResp.gender) userGender = (nResp.gender === 'F' || nResp.gender === 'female') ? 'female' : 'male';
+            if (nResp.birthyear) userBirthYear = nResp.birthyear;
+            if (nResp.birthday) userBirthday = nResp.birthday;
+          }
+        }
+
+        // 3. 구글 토큰 & 프로필 조회
+        if (provider === 'google' && code && process.env.GOOGLE_CLIENT_ID) {
+          const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
+          const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              code,
+              client_id: process.env.GOOGLE_CLIENT_ID,
+              client_secret: clientSecret,
+              redirect_uri: `${baseUrl}/api/auth/google/callback`,
+              grant_type: 'authorization_code'
+            })
+          });
+          const tokenData = await tokenRes.json();
+          if (tokenData.access_token) {
+            const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+              headers: { Authorization: `Bearer ${tokenData.access_token}` }
+            });
+            const profileData = await profileRes.json();
+            userName = profileData.name || profileData.given_name || `구글_${String(profileData.id || Date.now()).slice(-4)}`;
+            userEmail = profileData.email || `google_${String(profileData.id || Date.now()).slice(-4)}@picselec.com`;
           }
         }
       } catch (err) {

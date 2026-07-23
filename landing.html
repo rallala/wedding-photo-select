@@ -729,12 +729,15 @@ initYearSelect('signupBirthYear');
 initYearSelect('extraBirthYear');
 
 function checkAuthStatus() {
-  if (currentUser && currentUser.email) {
+  if (typeof currentUser === 'string') {
+    currentUser = { email: currentUser + '@social.com', name: currentUser, provider: 'social' };
+    localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
+  }
+  if (currentUser && (currentUser.email || currentUser.name)) {
     document.getElementById('btnHeaderAuth').style.display = 'none';
     document.getElementById('userStatusBar').style.display = 'flex';
-    document.getElementById('headerUserName').textContent = currentUser.name || currentUser.email.split('@')[0];
+    document.getElementById('headerUserName').textContent = currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : '회원');
 
-    // 신규 소셜가입자인 경우에만 1초 미니 모달 오픈
     if (currentUser.need_social_extra) {
       document.getElementById('modalSocialExtra').classList.add('open');
     }
@@ -791,12 +794,18 @@ if (urlParams.get('naver_proof') === 'true') {
 }
 
 function openMyPageModal() {
-  if (!currentUser) return;
+  if (typeof currentUser === 'string') {
+    currentUser = { email: currentUser + '@social.com', name: currentUser, provider: 'social' };
+  }
+  if (!currentUser) {
+    openAuthModal('login');
+    return;
+  }
   
   const provMap = { email: '✉️ 자체 이메일', kakao: '🟡 카카오', naver: '🟢 네이버', google: '🔴 구글' };
-  document.getElementById('myPageProviderBadge').textContent = provMap[currentUser.provider] || '소셜 회원';
-  document.getElementById('myPageEmail').textContent = currentUser.email || '-';
-  document.getElementById('myPageName').textContent = currentUser.name || currentUser.email.split('@')[0];
+  document.getElementById('myPageProviderBadge').textContent = provMap[currentUser.provider] || `${currentUser.provider || '소셜'} 회원`;
+  document.getElementById('myPageEmail').textContent = currentUser.email || '미등록 이메일';
+  document.getElementById('myPageName').textContent = currentUser.name || '회원';
   document.getElementById('myPageGender').textContent = (currentUser.gender === 'female') ? '🩷 여성' : '💙 남성';
   
   const by = currentUser.birth_year ? `${currentUser.birth_year}년` : '';
