@@ -124,7 +124,16 @@ function getActiveUsersList() {
 
 let sharp = null;
 try { sharp = require('sharp'); } catch (_) {}
-if (sharp && !fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
+// Vercel 등 서버리스 환경은 /var/task(앱 폴더)가 읽기 전용이라 여기서 mkdir이 실패할 수 있음.
+// 실패하면 캐시 없이(원본 그대로) 서빙하도록 sharp를 꺼서 나머지 요청은 계속 정상 처리되게 함.
+if (sharp) {
+  try {
+    if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
+  } catch (e) {
+    console.error('썸네일 캐시 폴더 생성 실패(읽기 전용 환경으로 추정, 캐시 없이 원본으로 서빙):', e.message);
+    sharp = null;
+  }
+}
 
 // ---------- 동적 상태(사진 루트는 런타임에 결정) ----------
 let ROOT = null;
