@@ -626,7 +626,9 @@ const server = http.createServer(async (req, res) => {
             const profileData = await profileRes.json();
             const kakaoAcc = profileData.kakao_account || {};
             const prof = kakaoAcc.profile || profileData.properties || {};
-            userName = prof.nickname || `카카오_${String(profileData.id || Date.now()).slice(-4)}`;
+            const rawNickname = prof.nickname || profileData.properties?.nickname || kakaoAcc.name;
+            const idSuffix = profileData.id ? String(profileData.id).slice(-4) : String(Date.now()).slice(-4);
+            userName = rawNickname || `카카오#${idSuffix}`;
             if (kakaoAcc.email) { userEmail = kakaoAcc.email; needEmail = false; }
             else { userEmail = `kakao_${profileData.id || Date.now()}@picselec.com`; }
           }
@@ -643,7 +645,9 @@ const server = http.createServer(async (req, res) => {
             });
             const profileData = await profileRes.json();
             const nResp = profileData.response || {};
-            userName = nResp.name || nResp.nickname || `네이버_${String(nResp.id || Date.now()).slice(-4)}`;
+            const rawName = nResp.name || nResp.nickname;
+            const nIdSuffix = nResp.id ? String(nResp.id).slice(-4) : String(Date.now()).slice(-4);
+            userName = rawName || `네이버#${nIdSuffix}`;
             if (nResp.email) { userEmail = nResp.email; needEmail = false; }
             else { userEmail = `naver_${String(nResp.id || Date.now()).slice(-4)}@picselec.com`; }
             if (nResp.gender) userGender = (nResp.gender === 'F' || nResp.gender === 'female') ? 'female' : 'male';
@@ -657,10 +661,6 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Supabase Auth에 실제 유저로 연동(federate): 없으면 생성, 있으면 매직링크 토큰 발급
-      // (카카오/네이버는 Supabase Auth 기본 프로바이더가 아니거나(네이버) 이메일 동의항목을
-      //  쓸 수 없어서(카카오) 이 방식으로 우회합니다. generateLink는 최초 1회는 options.data로
-      //  user_metadata를 채우지만, 이미 가입된 유저의 메타데이터 최신화가 필요하면
-      //  admin.updateUserById()를 추가로 호출해야 할 수 있습니다.)
       if (!supabaseAdmin) {
         res.writeHead(302, { 'Location': `/?social_auth=need_key&provider=${provider}&reason=no_supabase` });
         return res.end();
@@ -685,6 +685,26 @@ const server = http.createServer(async (req, res) => {
         console.error('Supabase generateLink error:', linkErr?.message);
         res.writeHead(302, { 'Location': `/?social_auth=error&provider=${provider}` });
         return res.end();
+      }
+
+      // 이미 가입된 유저인 경우에도 metadata name을 최신 카카오/네이버 프로필 닉네임으로 최신화
+      if (linkData?.user?.id) {
+        try {
+          const existingMeta = linkData.user.user_metadata || {};
+          const currentName = existingMeta.name;
+          const isGenericName = !currentName || currentName.includes('사용자') || currentName.startsWith('kakao_') || currentName.startsWith('naver_');
+          
+          await supabaseAdmin.auth.admin.updateUserById(linkData.user.id, {
+            user_metadata: {
+              ...existingMeta,
+              name: isGenericName ? userName : currentName,
+              provider,
+              need_email: needEmail && existingMeta.need_email !== false
+            }
+          });
+        } catch (updErr) {
+          console.error('Failed updating user_metadata on OAuth login:', updErr.message);
+        }
       }
 
       const redirectParams = new URLSearchParams({

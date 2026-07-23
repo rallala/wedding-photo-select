@@ -757,6 +757,25 @@ function initYearSelect(elId) {
 initYearSelect('signupBirthYear');
 initYearSelect('extraBirthYear');
 
+function formatDisplayName(name, email, provider) {
+  if (name && !name.includes('사용자') && !name.startsWith('kakao_') && !name.startsWith('naver_')) {
+    return name;
+  }
+  if (email && email.includes('@picselec.com')) {
+    const idPart = email.split('@')[0]; // e.g. kakao_1234567
+    const parts = idPart.split('_');
+    if (parts.length > 1) {
+      const provName = parts[0] === 'kakao' ? '카카오' : (parts[0] === 'naver' ? '네이버' : parts[0]);
+      const num = parts[1].slice(-4);
+      return `${provName}#${num}`;
+    }
+  }
+  if (email && !email.includes('@picselec.com')) {
+    return email.split('@')[0];
+  }
+  return name || (provider === 'kakao' ? '카카오회원' : (provider === 'naver' ? '네이버회원' : '회원'));
+}
+
 function userFromSession(session) {
   if (!session || !session.user) return null;
   const u = session.user;
@@ -767,7 +786,7 @@ function userFromSession(session) {
     id: u.id,
     email: u.email,
     contactEmail: meta.contact_email || null,
-    name: meta.name || (u.email ? u.email.split('@')[0] : '회원'),
+    name: formatDisplayName(meta.name, u.email, provider),
     gender: meta.gender || 'male',
     birth_year: meta.birth_year || null,
     birthday: meta.birthday || null,
