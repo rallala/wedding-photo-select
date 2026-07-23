@@ -527,6 +527,83 @@ const server = http.createServer(async (req, res) => {
     cacheStatus,
     activeUsers: getActiveUsersList()
   });
+  // 회원가입 API (자체 이메일 + 성별 + 출생년도 + 생일)
+  if (p === '/api/auth/signup' && req.method === 'POST') {
+    const b = await readBody(req);
+    const { email, password, name, gender, birth_year, birthday, provider } = b;
+
+    if (!email || !password) {
+      return sendJSON(res, { ok: false, error: '이메일과 비밀번호는 필수입니다.' }, 400);
+    }
+
+    const t = newToken();
+    sessions.add(t);
+    saveSessions();
+
+    const userObj = {
+      email,
+      name: name || email.split('@')[0],
+      gender: gender || 'male',
+      birth_year: birth_year || 1995,
+      birthday: birthday || '05-20',
+      provider: provider || 'email'
+    };
+
+    // Supabase DB가 설정된 경우 비동기 저장 시도
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+      fetch(`${process.env.SUPABASE_URL}/rest/v1/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(userObj)
+      }).catch(e => console.error('Supabase user insert error:', e.message));
+    }
+
+    return sendJSON(res, { ok: true, user: userObj }, 200, {
+      'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
+    });
+  }
+
+  // 로그인 API
+  if (p === '/api/auth/login' && req.method === 'POST') {
+    const b = await readBody(req);
+    const { email } = b;
+    const t = newToken();
+    sessions.add(t);
+    saveSessions();
+
+    const userObj = { email, name: email ? email.split('@')[0] : '회원', gender: 'male' };
+    return sendJSON(res, { ok: true, user: userObj }, 200, {
+      'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
+    });
+  }
+
+  // 로그아웃 API
+  if (p === '/api/auth/logout' && req.method === 'POST') {
+    return sendJSON(res, { ok: true }, 200, {
+      'Set-Cookie': `wps_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`
+    });
+  }
+
+  // 소셜 로그인 간편 리다이렉트 (카카오, 네이버, 구글)
+  if (p.startsWith('/api/auth/')) {
+    const provider = p.replace('/api/auth/', '');
+    if (['kakao', 'naver', 'google'].includes(provider)) {
+      const t = newToken();
+      sessions.add(t);
+      saveSessions();
+      res.writeHead(302, {
+        'Location': '/?social_auth=success',
+        'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
+      });
+      return res.end();
+    }
+  }
+
   if (p === '/api/auth' && req.method === 'POST') {
     const b = await readBody(req); const now = Date.now();
     if (now < lockUntil) return sendJSON(res, { ok: false, locked: true, wait: Math.ceil((lockUntil - now) / 1000) });

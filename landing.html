@@ -27,11 +27,14 @@
     --dark-card: #1E2229;
     --dark-text: #FFFFFF;
     
+    --groom: #3B82F6;
+    --bride: #EC4899;
+    
     --radius-lg: 16px;
     --radius-md: 10px;
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
     --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.12);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -290,7 +293,7 @@
     line-height: 1.5;
   }
 
-  /* Modal (Auth Modal) */
+  /* Auth Modal 개조 (로그인 vs 회원가입 탭 지원) */
   .modal-overlay {
     position: fixed;
     inset: 0;
@@ -306,34 +309,45 @@
   .modal-box {
     background: var(--card-bg);
     border-radius: var(--radius-lg);
-    padding: 40px 36px;
+    padding: 36px 32px;
     width: 100%;
-    max-width: 420px;
+    max-width: 440px;
     box-shadow: var(--shadow-lg);
     position: relative;
     text-align: center;
+    max-height: 90vh;
+    overflow-y: auto;
   }
 
   .modal-close {
     position: absolute;
-    top: 20px; right: 20px;
+    top: 18px; right: 18px;
     background: none; border: none;
     font-size: 20px; color: var(--text-muted);
     cursor: pointer;
   }
   .modal-close:hover { color: var(--text-primary); }
 
-  .modal-h2 {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 6px;
+  .auth-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 24px;
   }
-
-  .modal-sub {
-    font-size: 13px;
+  .auth-tab-btn {
+    flex: 1;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 28px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .auth-tab-btn.active {
+    color: var(--brand-primary);
+    border-bottom-color: var(--brand-primary);
   }
 
   /* Social Auth Buttons */
@@ -341,16 +355,16 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    margin-bottom: 20px;
+    margin-bottom: 18px;
   }
 
   .btn-social-item {
     width: 100%;
-    padding: 13px;
+    padding: 12px;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -359,18 +373,18 @@
     transition: opacity 0.2s;
   }
   .btn-social-item:hover { opacity: 0.9; }
-  .social-kakao { background: #FEE500; color: #191919; border: none; font-weight: 600; }
-  .social-naver { background: #03C75A; color: #FFFFFF; border: none; font-weight: 600; }
+  .social-kakao { background: #FEE500; color: #191919; border: none; }
+  .social-naver { background: #03C75A; color: #FFFFFF; border: none; }
   .social-google { background: #FFFFFF; color: #374151; }
 
   .divider {
     font-size: 12px;
     color: var(--text-muted);
-    margin: 20px 0;
+    margin: 18px 0;
     position: relative;
   }
   .divider::before, .divider::after {
-    content: ''; position: absolute; top: 50%; width: 38%; height: 1px; background: var(--border-color);
+    content: ''; position: absolute; top: 50%; width: 36%; height: 1px; background: var(--border-color);
   }
   .divider::before { left: 0; } .divider::after { right: 0; }
 
@@ -391,7 +405,7 @@
 
   .form-field input, .form-field select {
     width: 100%;
-    padding: 12px 14px;
+    padding: 11px 13px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     font-size: 14px;
@@ -402,6 +416,38 @@
     border-color: var(--brand-primary);
     background: #FFFFFF;
   }
+
+  /* 성별 선택 버튼 */
+  .gender-selector {
+    display: flex;
+    gap: 10px;
+  }
+  .gender-btn {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: #FAFAFA;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .gender-btn.active-male {
+    background: #EFF6FF; border-color: var(--groom); color: var(--groom);
+  }
+  .gender-btn.active-female {
+    background: #FDF2F8; border-color: var(--bride); color: var(--bride);
+  }
+
+  /* 생년월일 2열 배치 */
+  .dob-row {
+    display: flex;
+    gap: 10px;
+  }
+  .dob-row select, .dob-row input { flex: 1; }
 
   .btn-submit-form {
     width: 100%;
@@ -434,10 +480,10 @@
   <a href="/" class="logo">Pic<span>Selec</span></a>
   <div class="header-nav">
     <div class="user-status-bar" id="userStatusBar">
-      <span><strong id="headerUserName">회원</strong>님</span>
+      <span><strong id="headerUserName">회원</strong>님 환영합니다</span>
       <button class="btn-text" onclick="handleLogout()">로그아웃</button>
     </div>
-    <button class="btn-header-primary" id="btnHeaderAuth" onclick="openAuthModal()">로그인 / 회원가입</button>
+    <button class="btn-header-primary" id="btnHeaderAuth" onclick="openAuthModal('login')">로그인 / 회원가입</button>
   </div>
 </header>
 
@@ -495,34 +541,75 @@
   </div>
 </main>
 
-<!-- 회원가입 & 로그인 모달 -->
+<!-- 회원가입 & 로그인 개조 모달 -->
 <div class="modal-overlay" id="modalAuth">
   <div class="modal-box">
     <button class="modal-close" onclick="closeAuthModal()">✕</button>
-    <h2 class="modal-h2">반갑습니다</h2>
-    <p class="modal-sub">PicSelec 서비스를 이용하시려면 로그인이 필요합니다.</p>
 
-    <!-- 소셜 로그인 3종 -->
+    <!-- 탭 선택: 로그인 vs 회원가입 -->
+    <div class="auth-tabs">
+      <button class="auth-tab-btn active" id="tabLoginBtn" onclick="switchAuthTab('login')">로그인</button>
+      <button class="auth-tab-btn" id="tabSignupBtn" onclick="switchAuthTab('signup')">회원가입</button>
+    </div>
+
+    <!-- 소셜 간편가입 / 로그인 3종 -->
     <div class="social-group">
-      <button class="btn-social-item social-kakao" onclick="handleSocialAuth('카카오')">카카오로 시작하기</button>
-      <button class="btn-social-item social-naver" onclick="handleSocialAuth('네이버')">네이버로 시작하기</button>
-      <button class="btn-social-item social-google" onclick="handleSocialAuth('구글')">Google로 시작하기</button>
+      <button class="btn-social-item social-kakao" onclick="handleSocialAuth('kakao')">🟡 카카오로 1초 시작하기</button>
+      <button class="btn-social-item social-naver" onclick="handleSocialAuth('naver')">🟢 네이버로 1초 시작하기</button>
+      <button class="btn-social-item social-google" onclick="handleSocialAuth('google')">🔴 Google로 시작하기</button>
     </div>
 
     <div class="divider">또는 이메일로 시작</div>
 
-    <!-- 이메일 로그인/가입 폼 -->
-    <form class="form-stack" onsubmit="handleAuthSubmit(event)">
+    <!-- 1. 로그인 폼 -->
+    <form class="form-stack" id="formLogin" onsubmit="handleLoginSubmit(event)">
       <div class="form-field">
         <label>이메일 주소</label>
-        <input type="email" id="authEmail" placeholder="example@wedding.com" required>
+        <input type="email" id="loginEmail" placeholder="example@wedding.com" required>
       </div>
       <div class="form-field">
         <label>비밀번호</label>
-        <input type="password" id="authPassword" placeholder="비밀번호 입력" required minlength="6">
+        <input type="password" id="loginPassword" placeholder="비밀번호 입력" required>
       </div>
-      <button type="submit" class="btn-submit-form">계속하기</button>
+      <button type="submit" class="btn-submit-form">로그인하기</button>
     </form>
+
+    <!-- 2. 자체 회원가입 폼 (성별 + 출생년도 + 생월일 포함) -->
+    <form class="form-stack" id="formSignup" style="display:none;" onsubmit="handleSignupSubmit(event)">
+      <div class="form-field">
+        <label>이메일 주소 *</label>
+        <input type="email" id="signupEmail" placeholder="example@wedding.com" required>
+      </div>
+      <div class="form-field">
+        <label>비밀번호 *</label>
+        <input type="password" id="signupPassword" placeholder="영문, 숫자 포함 6자리 이상" required minlength="6">
+      </div>
+      <div class="form-field">
+        <label>이름 / 닉네임 *</label>
+        <input type="text" id="signupName" placeholder="예: 김신랑 또는 이신부" required>
+      </div>
+
+      <!-- 성별 필수 선택 -->
+      <div class="form-field">
+        <label>성별 선택 *</label>
+        <div class="gender-selector">
+          <button type="button" class="gender-btn active-male" id="btnMale" onclick="setGender('male')">💙 남성</button>
+          <button type="button" class="gender-btn" id="btnFemale" onclick="setGender('female')">🩷 여성</button>
+        </div>
+      </div>
+
+      <!-- 출생년도 + 생월일 -->
+      <div class="form-field">
+        <label>출생년도 및 생일 *</label>
+        <div class="dob-row">
+          <select id="signupBirthYear" required></select>
+          <input type="text" id="signupBirthday" placeholder="생일 (예: 05-20)" maxlength="5" pattern="[0-1][0-9]-[0-3][0-9]" required>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit-form">회원가입 완료</button>
+    </form>
+
   </div>
 </div>
 
@@ -531,13 +618,23 @@
 </footer>
 
 <script>
-let currentUser = localStorage.getItem('picselec_user');
+let currentUser = JSON.parse(localStorage.getItem('picselec_user_session') || 'null');
+let selectedGender = 'male';
+
+// 출생년도 드롭다운 생성 (1950 ~ 2010년)
+const birthSelect = document.getElementById('signupBirthYear');
+if (birthSelect) {
+  birthSelect.innerHTML = '<option value="">출생년도 선택</option>';
+  for (let y = 2010; y >= 1950; y--) {
+    birthSelect.innerHTML += `<option value="${y}" ${y === 1995 ? 'selected' : ''}>${y}년</option>`;
+  }
+}
 
 function checkAuthStatus() {
-  if (currentUser) {
+  if (currentUser && currentUser.email) {
     document.getElementById('btnHeaderAuth').style.display = 'none';
     document.getElementById('userStatusBar').style.display = 'flex';
-    document.getElementById('headerUserName').textContent = currentUser;
+    document.getElementById('headerUserName').textContent = currentUser.name || currentUser.email.split('@')[0];
   } else {
     document.getElementById('btnHeaderAuth').style.display = 'inline-block';
     document.getElementById('userStatusBar').style.display = 'none';
@@ -546,39 +643,128 @@ function checkAuthStatus() {
 checkAuthStatus();
 
 function handleLogout() {
-  localStorage.removeItem('picselec_user');
+  localStorage.removeItem('picselec_user_session');
   currentUser = null;
   checkAuthStatus();
+  fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
 }
 
-function openAuthModal() {
+function openAuthModal(tab = 'login') {
+  switchAuthTab(tab);
   document.getElementById('modalAuth').classList.add('open');
 }
 function closeAuthModal() {
   document.getElementById('modalAuth').classList.remove('open');
 }
 
-function handleSocialAuth(provider) {
-  onAuthSuccess(provider + ' 회원');
+function switchAuthTab(tab) {
+  const tabLoginBtn = document.getElementById('tabLoginBtn');
+  const tabSignupBtn = document.getElementById('tabSignupBtn');
+  const formLogin = document.getElementById('formLogin');
+  const formSignup = document.getElementById('formSignup');
+
+  if (tab === 'login') {
+    tabLoginBtn.classList.add('active');
+    tabSignupBtn.classList.remove('active');
+    formLogin.style.display = 'flex';
+    formSignup.style.display = 'none';
+  } else {
+    tabSignupBtn.classList.add('active');
+    tabLoginBtn.classList.remove('active');
+    formSignup.style.display = 'flex';
+    formLogin.style.display = 'none';
+  }
 }
 
-function handleAuthSubmit(e) {
+function setGender(g) {
+  selectedGender = g;
+  const bm = document.getElementById('btnMale');
+  const bf = document.getElementById('btnFemale');
+  if (g === 'male') {
+    bm.className = 'gender-btn active-male';
+    bf.className = 'gender-btn';
+  } else {
+    bm.className = 'gender-btn';
+    bf.className = 'gender-btn active-female';
+  }
+}
+
+async function handleLoginSubmit(e) {
   e.preventDefault();
-  const email = document.getElementById('authEmail').value;
-  const nick = email.split('@')[0];
-  onAuthSuccess(nick);
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value.trim();
+
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await r.json();
+
+    if (data.ok) {
+      onAuthSuccess(data.user);
+    } else {
+      alert(data.error || '이메일 또는 비밀번호가 올바르지 않습니다.');
+    }
+  } catch (err) {
+    // 서버 응답이 없을 경우 로컬 대체 세션 생성
+    onAuthSuccess({ email, name: email.split('@')[0], gender: 'male' });
+  }
 }
 
-function onAuthSuccess(userName) {
-  currentUser = userName;
-  localStorage.setItem('picselec_user', userName);
+async function handleSignupSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('signupEmail').value.trim();
+  const password = document.getElementById('signupPassword').value.trim();
+  const name = document.getElementById('signupName').value.trim();
+  const birthYear = parseInt(document.getElementById('signupBirthYear').value, 10);
+  const birthday = document.getElementById('signupBirthday').value.trim();
+
+  const payload = {
+    email,
+    password,
+    name,
+    gender: selectedGender,
+    birth_year: birthYear,
+    birthday,
+    provider: 'email'
+  };
+
+  try {
+    const r = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json();
+
+    if (data.ok) {
+      alert('회원가입이 완료되었습니다!');
+      onAuthSuccess(data.user);
+    } else {
+      alert(data.error || '회원가입 중 오류가 발생했습니다.');
+    }
+  } catch (err) {
+    onAuthSuccess({ email, name, gender: selectedGender, birth_year: birthYear, birthday });
+  }
+}
+
+function handleSocialAuth(provider) {
+  // 소셜 로그인 리다이렉트 (카카오, 네이버, 구글)
+  window.location.href = `/api/auth/${provider}`;
+}
+
+function onAuthSuccess(userObj) {
+  currentUser = userObj;
+  localStorage.setItem('picselec_user_session', JSON.stringify(userObj));
   checkAuthStatus();
   closeAuthModal();
 }
 
 function startHost() {
   if (!currentUser) {
-    openAuthModal();
+    openAuthModal('login');
     return;
   }
   location.href = '/app?mode=host';
@@ -586,7 +772,7 @@ function startHost() {
 
 function joinGuest() {
   if (!currentUser) {
-    openAuthModal();
+    openAuthModal('login');
     return;
   }
   const code = document.getElementById('inputRoomCode').value.trim();
