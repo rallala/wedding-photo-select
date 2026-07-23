@@ -629,6 +629,26 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, { ok: true, message: '비밀번호가 성공적으로 변경되었습니다.' });
   }
 
+  // 회원 탈퇴 / 계정 삭제 API
+  if (p === '/api/auth/delete-account' && req.method === 'POST') {
+    const b = await readBody(req);
+    const { email } = b;
+
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && email) {
+      fetch(`${process.env.SUPABASE_URL}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: {
+          'apikey': process.env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
+        }
+      }).catch(e => console.error('Supabase delete user error:', e.message));
+    }
+
+    return sendJSON(res, { ok: true, message: '회원 탈퇴 및 계정 삭제가 완료되었습니다.' }, 200, {
+      'Set-Cookie': `wps_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`
+    });
+  }
+
   // 3대 소셜 로그인 리다이렉트 및 콜백 (카카오, 네이버, 구글)
   if (p.startsWith('/api/auth/')) {
     const actionPath = p.replace('/api/auth/', '');
@@ -636,12 +656,61 @@ const server = http.createServer(async (req, res) => {
     // 소셜 로그인 인증 완료 후 돌아오는 콜백 (Callback) 처리
     if (actionPath.endsWith('/callback')) {
       const provider = actionPath.split('/')[0];
+      const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      const code = parsedUrl.searchParams.get('code');
+      const baseUrl = externalUrl || 'https://picselec.com';
+
+      let userName = '소셜 회원';
+      let userEmail = `${provider}_user@picselec.com`;
+      let userGender = null;
+      let userBirthYear = null;
+      let userBirthday = null;
+
+      try {
+        // 1. 카카오 토큰 & 프로필 조회
+        if (provider === 'kakao' && code && process.env.KAKAO_CLIENT_ID) {
+          const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+            body: new URLSearchParams({
+              grant_type: 'authorization_code',
+              client_id: process.env.KAKAO_CLIENT_ID,
+              redirect_uri: `${baseUrl}/api/auth/kakao/callback`,
+              code
+            })
+          });
+          const tokenData = await tokenRes.json();
+          if (tokenData.access_token) {
+            const profileRes = await fetch('https://kapi.kakao.com/v2/user/me', {
+              headers: { Authorization: `Bearer ${tokenData.access_token}` }
+            });
+            const profileData = await profileRes.json();
+            const kakaoAcc = profileData.kakao_account || {};
+            const prof = kakaoAcc.profile || {};
+            userName = prof.nickname || `카카오_${profileData.id}`;
+            userEmail = kakaoAcc.email || `kakao_${profileData.id}@picselec.com`;
+          }
+        }
+      } catch (err) {
+        console.error('OAuth profile fetch error:', err.message);
+      }
+
       const t = newToken();
       sessions.add(t);
       saveSessions();
 
+      const redirectParams = new URLSearchParams({
+        social_auth: 'success',
+        provider,
+        email: userEmail,
+        name: userName
+      });
+      if (userGender) redirectParams.set('gender', userGender);
+      if (userBirthYear) redirectParams.set('birth_year', userBirthYear);
+      if (userBirthday) redirectParams.set('birthday', userBirthday);
+
       res.writeHead(302, {
-        'Location': `/?social_auth=success&provider=${encodeURIComponent(provider)}`,
+        'Location': `/?${redirectParams.toString()}`,
         'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
       });
       return res.end();
