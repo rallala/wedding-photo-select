@@ -1,0 +1,14 @@
+{
+  "name": "wedding-photo-select",
+  "version": "1.1.0",
+  "description": "웨딩 사진 실시간 셀렉 (신랑·신부 동시 선택 + 셀렉본 복사)",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "tunnel": "node server.js --tunnel"
+  },
+  "dependencies": {
+    "sharp": "^0.33.5"
+  }
+}

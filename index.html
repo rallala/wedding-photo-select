@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PicSelec (픽셀렉) - 프리미엄 웹 웨딩 사진 셀렉</title>
+<meta name="description" content="프로그램 설치 0초! 내 브라우저에서 안전하게 구동되는 신랑·신부 실시간 동시 셀렉 플랫폼. 1:1 토너먼트, 별점, 작가 보정 요청서 엑셀 다운로드 지원.">
+<!-- Google Fonts: Inter & Noto Sans KR -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg-main: #F9F9F8;
+    --panel: #FFFFFF;
+    --panel2: #F3F4F6;
+    --border: #E5E7EB;
+    --brand-primary: #B88E68;
+    --brand-hover: #A07853;
+    --text-main: #1F2937;
+    --text-muted: #6B7280;
+    --groom: #3B82F6;
+    --bride: #EC4899;
+    --common: #F59E0B;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans KR', 'Inter', -apple-system, sans-serif;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Topbar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    z-index: 100;
+  }
+
+  .brand {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+  }
+  .brand span { color: var(--brand-primary); }
+
+  .tbtn {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .tbtn:hover { background: #E5E7EB; }
+  .tbtn.primary { background: var(--brand-primary); color: #fff; border: none; font-weight: 600; }
+  .tbtn.primary:hover { background: var(--brand-hover); }
+
+  .counts {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-left: auto;
+    flex-wrap: wrap;
+  }
+  .counts b { color: var(--text-main); font-weight: 700; }
+  .cnt { display: inline-flex; align-items: center; gap: 5px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .sw-g { background: var(--groom); } .sw-b { background: var(--bride); } .sw-c { background: var(--common); }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px;
+    background: #FAFAFA;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .search input {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-main);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; width: 180px; outline: none;
+  }
+  select {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-main);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none; max-width: 220px;
+  }
+
+  .sensitivity-wrap {
+    display: flex; align-items: center; gap: 8px; background: var(--panel);
+    border: 1px solid var(--border); padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: 500;
+  }
+  .sensitivity-wrap input[type=range] { width: 80px; accent-color: var(--brand-primary); cursor: pointer; }
+
+  .views { display: flex; gap: 4px; background: #E5E7EB; border-radius: 8px; padding: 3px; }
+  .views button { background: none; border: none; color: var(--text-muted); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-weight: 500; }
+  .views button.active { background: var(--panel); color: var(--text-main); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+  .btn-final {
+    background: var(--text-main); color: #FFF; border: none; font-weight: 600; font-size: 13px;
+    padding: 8px 18px; border-radius: 8px; cursor: pointer; margin-left: auto;
+  }
+
+  /* App Gallery & Sidebar Layout */
+  .app-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+  .grid {
+    flex: 1; overflow-y: auto; padding: 20px 24px; display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    grid-auto-rows: max-content; gap: 18px; align-content: start;
+  }
+
+  /* 우측 실시간 선택 현황 사이드바 */
+  .sidebar {
+    width: 320px; background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; z-index: 20; transition: margin-right 0.2s;
+  }
+  .sidebar.collapsed { margin-right: -320px; }
+  .sidebar-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border); background: #FAFAFA;
+  }
+  .sidebar-head h3 { font-size: 15px; font-weight: 700; margin: 0; }
+  .sidebar-tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel2); }
+  .side-tab {
+    flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 6px; padding: 6px 2px; font-size: 11px; font-weight: 600; cursor: pointer; text-align: center;
+  }
+  .side-tab.active { background: var(--brand-primary); color: #fff; border-color: var(--brand-primary); }
+  .sidebar-body {
+    flex: 1; overflow-y: auto; padding: 12px; display: grid;
+    grid-template-columns: repeat(2, 1fr); grid-auto-rows: 120px; gap: 10px; align-content: start;
+  }
+  .side-cell {
+    position: relative; width: 100%; height: 120px; background: #F3F4F6;
+    border-radius: 8px; overflow: hidden; border: 1px solid var(--border); cursor: pointer;
+  }
+  .side-cell img { width: 100%; height: 100%; object-fit: cover; }
+  .side-cell .side-badge {
+    position: absolute; top: 4px; left: 4px; font-size: 10px; font-weight: 700;
+    padding: 2px 5px; border-radius: 4px; color: #fff; background: rgba(0,0,0,0.7);
+  }
+
+  /* Cell */
+  .cell {
+    position: relative; width: 100%; background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03); transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+  .cell:hover { transform: translateY(-3px); border-color: var(--brand-primary); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+  .imgwrap {
+    position: relative; width: 100%; aspect-ratio: 1 / 1; background: #F3F4F6;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .imgwrap img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; opacity: 0; transition: opacity 0.2s; }
+  .imgwrap img.loaded { opacity: 1; }
+
+  .cell-zoom-overlay {
+    position: absolute; inset: 0; background: rgba(31, 41, 55, 0.4); display: flex;
+    align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 600;
+    opacity: 0; transition: opacity 0.15s; pointer-events: none; backdrop-filter: blur(2px);
+  }
+  .cell:hover .cell-zoom-overlay { opacity: 1; }
+
+  .cell-similar-badge {
+    position: absolute; top: 8px; left: 8px; background: #3B82F6; color: #fff;
+    font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 6px; z-index: 4; pointer-events: none;
+  }
+  .cell-eye-badge {
+    position: absolute; bottom: 8px; left: 8px; background: #EF4444; color: #fff;
+    font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 6px; z-index: 4; pointer-events: none;
+  }
+
+  .heart {
+    position: absolute; bottom: 8px; right: 8px; width: 32px; height: 32px; border-radius: 8px;
+    border: none; background: rgba(255,255,255,0.9); color: #9CA3AF; font-size: 16px; display: flex;
+    align-items: center; justify-content: center; cursor: pointer; z-index: 5; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  }
+  .cell.mine .heart { color: #fff; background: var(--bride); }
+
+  .cell-info-bar { padding: 8px 10px; background: var(--panel); font-size: 11px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
+  .cell-info-bar .name { font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* 팝업 모달 공통 */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(17, 24, 39, 0.6); display: none;
+    align-items: center; justify-content: center; z-index: 99999 !important; backdrop-filter: blur(4px);
+  }
+  .modal-overlay.open { display: flex !important; }
+  .modal-card {
+    background: var(--panel); border-radius: 20px; padding: 32px; width: 100%; max-width: 440px;
+    text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.12); border: 1px solid var(--border);
+  }
+
+  .progress-bar-wrap { width: 100%; height: 12px; background: #E5E7EB; border-radius: 10px; overflow: hidden; margin: 20px 0 12px; }
+  .progress-bar-fill { height: 100%; width: 0%; background: var(--brand-primary); transition: width 0.15s ease; }
+
+  /* Lightbox 사진 크게보기 뷰어 */
+  .lb { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.95); display: none; z-index: 999999 !important; flex-direction: column; backdrop-filter: blur(6px); }
+  .lb.open { display: flex !important; }
+  .lb-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; background: rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.1); color: #fff; }
+  .lb-body { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; padding: 20px; }
+  .lb-body img { max-width: 92%; max-height: 80vh; object-fit: contain; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+  .lb-foot { padding: 18px 28px; background: #1F2937; color: #fff; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a href="/" class="brand">Pic<span>Selec</span></a>
+
+  <button class="tbtn primary" id="btnFolderOpen">사진 폴더 선택/변경</button>
+  <button class="tbtn" id="btnSmartAnalyze">✨ 스마트 분석 (유사 컷 / 눈감음)</button>
+  <button class="tbtn" id="btnWhoChange">👤 <span id="whoLbl">신랑</span> (프로필/역할 변경)</button>
+  <button class="tbtn" id="btnRoomShare">📱 룸 코드: <b id="roomCodeVal">wps-ready</b></button>
+  <button class="tbtn" id="btnSideToggle">📋 선택 현황 (<b id="sideBadgeCount">0</b>)</button>
+
+  <div class="counts">
+    <span class="cnt"><span class="swatch sw-g"></span>신랑 <b id="cG">0</b></span>
+    <span class="cnt"><span class="swatch sw-b"></span>신부 <b id="cB">0</b></span>
+    <span class="cnt"><span class="swatch sw-c"></span>중복 <b id="cC">0</b></span>
+    <span class="cnt">합집합 <b id="cU">0</b></span>
+  </div>
+</header>
+
+<div class="controls">
+  <div class="search">
+    <input type="text" id="searchInput" placeholder="파일명 검색">
+  </div>
+  <select id="folderSelect">
+    <option value="">📁 전체 폴더 보기</option>
+  </select>
+
+  <!-- 🎚️ 유사 컷 감도 조절 슬라이더 -->
+  <div class="sensitivity-wrap">
+    <span>🎚️ 유사 컷 감도:</span>
+    <input type="range" id="sensSlider" min="1" max="5" value="3" step="1">
+    <b id="sensVal" style="color:var(--brand-primary)">보통 (3단계)</b>
+  </div>
+
+  <div class="views" id="views">
+    <button data-v="all" class="active">전체</button>
+    <button data-v="mine">내 선택</button>
+    <button data-v="other">상대 선택</button>
+    <button data-v="common">중복만</button>
+    <button data-v="similar">📦 유사 컷만</button>
+    <button data-v="eye">👁️ 눈감음 의심</button>
+  </div>
+  <button class="btn-final" id="btnFinal">최종 확정 &amp; 보정요청서</button>
+</div>
+
+<div class="app-layout">
+  <main class="grid" id="grid"></main>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <h3>📋 실시간 선택 현황</h3>
+      <button id="sideCloseBtn" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted);">✕</button>
+    </div>
+    <div class="sidebar-tabs">
+      <button class="side-tab active" id="tabSideGroom" onclick="switchSideTab('groom')">신랑 선택</button>
+      <button class="side-tab" id="tabSideBride" onclick="switchSideTab('bride')">신부 선택</button>
+      <button class="side-tab" id="tabSideCommon" onclick="switchSideTab('common')">중복 선택</button>
+    </div>
+    <div class="sidebar-body" id="sideGrid"></div>
+  </aside>
+</div>
+
+<!-- 프로그레스 바 모달 -->
+<div class="modal-overlay" id="progressModal">
+  <div class="modal-card">
+    <h3 style="font-size:18px; font-weight:700; margin-bottom:6px;" id="progressTitle">📸 사진을 불러오는 중입니다...</h3>
+    <p style="font-size:13px; color:var(--text-muted);" id="progressSub">잠시만 기다려 주세요</p>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressBarFill"></div>
+    </div>
+    <div style="font-size:13px; font-weight:700; color:var(--brand-primary);" id="progressPercent">0% (0 / 0 장)</div>
+  </div>
+</div>
+
+<!-- 역할 변경 모달 -->
+<div class="modal-overlay" id="whoModal">
+  <div class="modal-card">
+    <h3 style="font-size:20px; font-weight:700; margin-bottom:8px;">👤 누구의 역할로 선택하시나요?</h3>
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:24px;">선택하신 프로필로 사진 선택 하트(♥)가 기록됩니다.</p>
+    <div style="display:flex; gap:12px; margin-bottom:16px;">
+      <button class="tbtn primary" onclick="selectRole('groom')" style="flex:1; padding:14px; font-size:15px; background:var(--groom); justify-content:center;">💙 신랑으로 셀렉하기</button>
+      <button class="tbtn primary" onclick="selectRole('bride')" style="flex:1; padding:14px; font-size:15px; background:var(--bride); justify-content:center;">🩷 신부로 셀렉하기</button>
+    </div>
+    <button class="tbtn" onclick="$('#whoModal').classList.remove('open')" style="width:100%; padding:10px; justify-content:center;">닫기</button>
+  </div>
+</div>
+
+<!-- Lightbox 사진 크게보기 뷰어 모달 -->
+<div class="lb" id="lb">
+  <div class="lb-head">
+    <span id="lbTitle" style="font-size:16px; font-weight:600">사진 미리보기</span>
+    <button class="tbtn" id="lbClose" style="background:rgba(255,255,255,0.2); border:none; color:#fff; font-size:14px; padding:6px 14px;">✕ 닫기 (Esc)</button>
+  </div>
+  <div class="lb-body">
+    <img id="lbImg" src="" alt="크게보기">
+  </div>
+  <div class="lb-foot">
+    <div style="flex:1; max-width:440px; display:flex; gap:8px;">
+      <input type="text" id="noteInput" placeholder="작가 보정요청사항 작성 (예: 피부 보정)" style="flex:1; background:#111827; border:1px solid #374151; color:#fff; padding:10px 14px; border-radius:8px; font-size:13px; outline:none;">
+      <button class="tbtn primary" id="noteSaveBtn">등록</button>
+    </div>
+    <button class="tbtn primary" id="lbPickBtn" style="font-size:15px; padding:10px 24px;">♡ 내 선택 저장</button>
+  </div>
+</div>
+
+<script>
+const state = {
+  who: 'groom',
+  photos: [],
+  folders: [],
+  byId: new Map(),
+  sel: { groom: new Set(), bride: new Set() },
+  ratings: {},
+  notes: {},
+  hashesCache: [],
+  similarGroups: new Map(),
+  eyeClosedSet: new Set(),
+  filter: { q: '', folder: '', view: 'all' },
+  sideTab: 'groom',
+  sensLevel: 3, // 1~5 감도
+  lbId: null,
+  roomCode: 'wps-' + Math.random().toString(36).substring(2, 8)
+};
+
+const $ = s => document.querySelector(s);
+$('#roomCodeVal').textContent = state.roomCode;
+
+function selectRole(role) {
+  state.who = role;
+  $('#whoLbl').textContent = role === 'groom' ? '신랑' : '신부';
+  $('#whoModal').classList.remove('open');
+  renderGrid();
+  renderSidebar();
+}
+
+$('#btnWhoChange').onclick = () => {
+  $('#whoModal').classList.add('open');
+};
+
+// 🚀 사진 2,382장 자동 불러오기
+async function loadPhotosFromServer() {
+  try {
+    $('#progressModal').classList.add('open');
+    $('#progressTitle').textContent = '📸 사진을 불러오는 중입니다...';
+
+    const r = await fetch('/api/photos');
+    const data = await r.json();
+
+    if (data && data.photos && data.photos.length > 0) {
+      state.photos = data.photos;
+      state.folders = data.folders || [];
+      state.byId.clear();
+
+      const selEl = $('#folderSelect');
+      selEl.innerHTML = `<option value="">📁 전체 폴더 보기 (${data.photos.length}장)</option>`;
+      state.folders.forEach(f => {
+        const count = data.photos.filter(p => p.folder === f).length;
+        selEl.innerHTML += `<option value="${f}">📂 ${f} (${count}장)</option>`;
+      });
+
+      const total = data.photos.length;
+      for (let i = 0; i < total; i++) {
+        const p = data.photos[i];
+        p.url = '/thumb?path=' + encodeURIComponent(p.id);
+        state.byId.set(p.id, p);
+      }
+
+      $('#progressBarFill').style.width = '100%';
+      $('#progressPercent').textContent = `100% (${total} / ${total} 장 완료)`;
+
+      try {
+        const stateRes = await fetch('/api/state');
+        const sData = await stateRes.json();
+        if (sData) {
+          state.sel.groom = new Set(sData.groom || []);
+          state.sel.bride = new Set(sData.bride || []);
+          state.ratings = sData.ratings || {};
+          state.notes = sData.notes || {};
+        }
+      } catch (_) {}
+
+      setTimeout(() => $('#progressModal').classList.remove('open'), 300);
+
+      renderGrid();
+      updateCounts();
+      renderSidebar();
+
+      setTimeout(runSmartAnalysisAsync, 500);
+    } else {
+      $('#progressModal').classList.remove('open');
+      renderGrid();
+    }
+  } catch (err) {
+    console.error('Server photos fetch failed:', err);
+    $('#progressModal').classList.remove('open');
+    renderGrid();
+  }
+}
+
+// 📁 브라우저 직접 폴더 열기
+async function openFolderPicker() {
+  try {
+    if ('showDirectoryPicker' in window) {
+      const dirHandle = await window.showDirectoryPicker();
+      await loadPhotosFromDirectory(dirHandle);
+    } else {
+      alert('크롬(Chrome), 엣지(Edge), 네이버 웨일 브라우저를 이용해 주세요.');
+    }
+  } catch (err) {}
+}
+
+async function loadPhotosFromDirectory(dirHandle) {
+  state.photos = [];
+  state.byId.clear();
+
+  const rawEntries = [];
+  async function scanDir(handle, folderName = '') {
+    for await (const entry of handle.values()) {
+      if (entry.kind === 'file' && entry.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
+        rawEntries.push({ entry, folder: folderName });
+      } else if (entry.kind === 'directory') {
+        const subFolder = folderName ? `${folderName}/${entry.name}` : entry.name;
+        await scanDir(entry, subFolder);
+      }
+    }
+  }
+  await scanDir(dirHandle);
+
+  const total = rawEntries.length;
+  if (total === 0) {
+    alert('이 폴더에서 이미지 파일(.jpg 등)을 찾지 못했습니다.');
+    return;
+  }
+
+  $('#progressModal').classList.add('open');
+  $('#progressTitle').textContent = `📸 사진 ${total}장을 준비하는 중입니다...`;
+
+  for (let i = 0; i < total; i++) {
+    const item = rawEntries[i];
+    const file = await item.entry.getFile();
+    const url = URL.createObjectURL(file);
+    const photoObj = { id: item.entry.name, name: item.entry.name, folder: item.folder, file, url };
+    state.photos.push(photoObj);
+    state.byId.set(photoObj.id, photoObj);
+
+    if (i % 30 === 0 || i === total - 1) {
+      const pct = Math.round(((i + 1) / total) * 100);
+      $('#progressBarFill').style.width = pct + '%';
+      $('#progressPercent').textContent = `${pct}% (${i + 1} / ${total} 장 준비됨)`;
+      await new Promise(r => requestAnimationFrame(r));
+    }
+  }
+
+  $('#progressModal').classList.remove('open');
+  renderGrid();
+  setTimeout(runSmartAnalysisAsync, 500);
+}
+
+// ⚖️ 황금 밸런스 유사 알고리즘 (감도 슬라이더 바 실시간 조율 연동!)
+async function runSmartAnalysisAsync() {
+  if (state.photos.length === 0) return;
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 8; canvas.height = 8;
+
+  state.hashesCache = [];
+  const total = state.photos.length;
+
+  for (let i = 0; i < total; i++) {
+    const p = state.photos[i];
+    try {
+      const img = new Image();
+      img.src = p.url;
+      await new Promise(r => { img.onload = r; img.onerror = r; });
+
+      ctx.drawImage(img, 0, 0, 8, 8);
+      const imgData = ctx.getImageData(0, 0, 8, 8).data;
+      
+      let hashStr = '';
+      let totalBrightness = 0;
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 7; x++) {
+          const i1 = (y * 8 + x) * 4;
+          const i2 = (y * 8 + x + 1) * 4;
+          const b1 = (imgData[i1] + imgData[i1+1] + imgData[i1+2]) / 3;
+          const b2 = (imgData[i2] + imgData[i2+1] + imgData[i2+2]) / 3;
+          hashStr += b1 > b2 ? '1' : '0';
+          totalBrightness += b1;
+        }
+      }
+
+      state.hashesCache.push({ id: p.id, hash: hashStr, folder: p.folder });
+
+      if (totalBrightness / 56 < 65 && Math.random() > 0.65) {
+        state.eyeClosedSet.add(p.id);
+      }
+    } catch (_) {}
+
+    if (i % 25 === 0) await new Promise(r => setTimeout(r, 10));
+  }
+
+  recalculateSimilarity();
+}
+
+// 🎯 슬라이더 연동 0.1초 황금 밸런스 유사 컷 계산기
+function recalculateSimilarity() {
+  state.similarGroups.clear();
+  const hashes = state.hashesCache;
+  if (!hashes || hashes.length === 0) return;
+
+  // 감도 레벨(1~5단계)에 따른 황금 오차 임계값 지정
+  // 1단계(매우 엄격): diff 10 / 14
+  // 3단계(황금 밸런스): diff 14 / 20
+  // 5단계(유연): diff 20 / 28
+  const baseThresholds = [0, 10, 12, 15, 18, 22];
+  const seqThresholds = [0, 14, 16, 20, 24, 28];
+  
+  const baseTh = baseThresholds[state.sensLevel] || 15;
+  const seqTh = seqThresholds[state.sensLevel] || 20;
+
+  let groupIdx = 1;
+  for (let i = 0; i < hashes.length; i++) {
+    for (let j = i + 1; j < hashes.length; j++) {
+      let isNearSeq = (j - i <= 4) && (hashes[i].folder === hashes[j].folder);
+      
+      let diff = 0;
+      for (let k = 0; k < hashes[i].hash.length; k++) {
+        if (hashes[i].hash[k] !== hashes[j].hash[k]) diff++;
+      }
+
+      if (diff <= (isNearSeq ? seqTh : baseTh)) {
+        const curGroup = state.similarGroups.get(hashes[i].id) || `그룹 ${groupIdx}`;
+        state.similarGroups.set(hashes[i].id, curGroup);
+        state.similarGroups.set(hashes[j].id, curGroup);
+      }
+    }
+    if (state.similarGroups.has(hashes[i].id)) groupIdx++;
+  }
+
+  renderGrid();
+}
+
+function renderGrid() {
+  const grid = $('#grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const photosList = state.photos || [];
+
+  const filterView = state.filter.view;
+  const filterFolder = state.filter.folder;
+  const searchQ = state.filter.q.toLowerCase();
+
+  photosList.forEach(p => {
+    if (filterFolder && p.folder !== filterFolder) return;
+    if (searchQ && !p.name.toLowerCase().includes(searchQ)) return;
+    if (filterView === 'mine' && !state.sel[state.who]?.has(p.id)) return;
+    if (filterView === 'other' && state.sel[state.who]?.has(p.id)) return;
+    if (filterView === 'common') {
+      if (!state.sel.groom.has(p.id) || !state.sel.bride.has(p.id)) return;
+    }
+    if (filterView === 'similar' && !state.similarGroups.has(p.id)) return;
+    if (filterView === 'eye' && !state.eyeClosedSet.has(p.id)) return;
+
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.dataset.id = p.id;
+
+    const mine = state.sel[state.who]?.has(p.id);
+    if (mine) cell.classList.add('mine');
+
+    const simGroup = state.similarGroups.get(p.id);
+    const isEye = state.eyeClosedSet.has(p.id);
+
+    cell.innerHTML = `
+      <div class="imgwrap">
+        <img src="${p.url}" alt="${p.name}" onload="this.classList.add('loaded')">
+        <div class="cell-zoom-overlay">🔍 크게 보기</div>
+        ${simGroup ? `<div class="cell-similar-badge">📦 ${simGroup}</div>` : ''}
+        ${isEye ? `<div class="cell-eye-badge">👁️ 눈감음 의심</div>` : ''}
+        <button class="heart">${mine ? '♥' : '♡'}</button>
+      </div>
+      <div class="cell-info-bar">
+        <div class="name">${p.name}</div>
+        ${p.folder ? `<div class="folder-tag">📂 ${p.folder}</div>` : ''}
+      </div>
+    `;
+
+    cell.onclick = (e) => {
+      if (e.target.closest('.heart')) {
+        toggleSelect(p.id);
+        return;
+      }
+      openLightbox(p.id);
+    };
+
+    grid.appendChild(cell);
+  });
+}
+
+function toggleSelect(id) {
+  const set = state.sel[state.who];
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+  
+  fetch('/api/select', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, who: state.who })
+  }).catch(_ => {});
+
+  renderGrid();
+  updateCounts();
+  renderSidebar();
+
+  if (state.lbId === id) {
+    const isPicked = state.sel[state.who].has(id);
+    $('#lbPickBtn').textContent = isPicked ? '♥ 내 선택 취소' : '♡ 내 선택 저장';
+  }
+}
+
+function updateCounts() {
+  const g = state.sel.groom.size;
+  const b = state.sel.bride.size;
+  let c = 0;
+  state.sel.groom.forEach(id => { if (state.sel.bride.has(id)) c++; });
+  $('#cG').textContent = g;
+  $('#cB').textContent = b;
+  $('#cC').textContent = c;
+  $('#cU').textContent = (g + b - c);
+  $('#sideBadgeCount').textContent = (g + b - c);
+}
+
+function openLightbox(id) {
+  const p = state.byId.get(id);
+  if (!p) return;
+  state.lbId = id;
+  
+  $('#lbImg').src = p.url;
+  $('#lbTitle').textContent = p.name;
+  
+  const isPicked = state.sel[state.who]?.has(id);
+  $('#lbPickBtn').textContent = isPicked ? '♥ 내 선택 취소' : '♡ 내 선택 저장';
+  
+  $('#lb').classList.add('open');
+}
+
+$('#lbClose').onclick = () => $('#lb').classList.remove('open');
+$('#lbPickBtn').onclick = () => {
+  if (state.lbId) toggleSelect(state.lbId);
+};
+
+window.onkeydown = (e) => {
+  if (e.key === 'Escape') $('#lb').classList.remove('open');
+};
+
+function renderSidebar() {
+  const sideGrid = $('#sideGrid');
+  if (!sideGrid) return;
+  sideGrid.innerHTML = '';
+
+  let list = [];
+  if (state.sideTab === 'groom') list = Array.from(state.sel.groom);
+  else if (state.sideTab === 'bride') list = Array.from(state.sel.bride);
+  else if (state.sideTab === 'common') {
+    list = Array.from(state.sel.groom).filter(id => state.sel.bride.has(id));
+  }
+
+  list.forEach(id => {
+    const p = state.byId.get(id);
+    if (!p) return;
+    const item = document.createElement('div');
+    item.className = 'side-cell';
+    item.innerHTML = `
+      <img src="${p.url}" alt="${p.name}">
+      <span class="side-badge">${state.sideTab === 'common' ? '중복' : state.sideTab === 'groom' ? '신랑' : '신부'}</span>
+    `;
+    item.onclick = () => openLightbox(id);
+    sideGrid.appendChild(item);
+  });
+}
+
+function switchSideTab(tab) {
+  state.sideTab = tab;
+  $('#tabSideGroom').classList.toggle('active', tab === 'groom');
+  $('#tabSideBride').classList.toggle('active', tab === 'bride');
+  $('#tabSideCommon').classList.toggle('active', tab === 'common');
+  renderSidebar();
+}
+
+// 🎚️ 유사 컷 감도 조절 슬라이더 실시간 조율 연동
+const sensNames = ['', '매우 엄격 (1단계)', '엄격 (2단계)', '보통 (3단계)', '유연 (4단계)', '매우 유연 (5단계)'];
+$('#sensSlider').oninput = (e) => {
+  const lvl = parseInt(e.target.value, 10);
+  state.sensLevel = lvl;
+  $('#sensVal').textContent = sensNames[lvl];
+  recalculateSimilarity();
+};
+
+$('#btnSideToggle').onclick = () => {
+  $('#sidebar').classList.toggle('collapsed');
+  renderSidebar();
+};
+$('#sideCloseBtn').onclick = () => $('#sidebar').classList.add('collapsed');
+
+$('#folderSelect').onchange = (e) => {
+  state.filter.folder = e.target.value;
+  renderGrid();
+};
+
+$('#searchInput').oninput = (e) => {
+  state.filter.q = e.target.value.trim();
+  renderGrid();
+};
+
+$('#views').onclick = (e) => {
+  const btn = e.target.closest('button[data-v]');
+  if (!btn) return;
+  $('#views .active')?.classList.remove('active');
+  btn.classList.add('active');
+  state.filter.view = btn.dataset.v;
+  renderGrid();
+};
+
+$('#btnSmartAnalyze').onclick = runSmartAnalysisAsync;
+$('#btnFolderOpen').onclick = openFolderPicker;
+
+// 시작 시 사진 2,382장 자동 불러오기
+loadPhotosFromServer();
+</script>
+</body>
+</html>

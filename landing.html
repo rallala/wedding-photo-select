@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PicSelec (픽셀렉) - 프리미엄 웨딩 사진 셀렉 플랫폼</title>
+<meta name="description" content="별도의 프로그램 설치나 데이터 업로드 없이, 내 컴퓨터의 원본 사진을 안전하게 함께 셀렉하는 프리미엄 웨딩 셀렉 서비스.">
+<!-- Google Fonts: Inter & Noto Sans KR -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg-main: #F9F9F8;
+    --card-bg: #FFFFFF;
+    --text-primary: #1F242D;
+    --text-secondary: #6B7280;
+    --text-muted: #9CA3AF;
+    --border-color: #E5E7EB;
+    --border-hover: #D1D5DB;
+    
+    --brand-primary: #B88E68; /* Warm Rose Gold / Beige */
+    --brand-hover: #A07853;
+    --brand-light: #FDF8F4;
+    
+    --dark-card: #1E2229;
+    --dark-text: #FFFFFF;
+    
+    --radius-lg: 16px;
+    --radius-md: 10px;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans KR', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 48px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Inter', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text-primary);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo span {
+    color: var(--brand-primary);
+  }
+
+  .header-nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .btn-text {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px 12px;
+    transition: color 0.2s;
+  }
+  .btn-text:hover { color: var(--text-primary); }
+
+  .btn-header-primary {
+    background: var(--text-primary);
+    color: #FFFFFF;
+    border: none;
+    padding: 9px 20px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-header-primary:hover { background: #374151; }
+
+  .user-status-bar {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  /* Hero Section */
+  .hero-section {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 80px 24px 60px;
+    text-align: center;
+    flex: 1;
+  }
+
+  .hero-tag {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--brand-primary);
+    background: var(--brand-light);
+    border: 1px solid rgba(184, 142, 104, 0.25);
+    padding: 6px 16px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+    letter-spacing: -0.2px;
+  }
+
+  .hero-title {
+    font-size: 42px;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: -1px;
+    color: var(--text-primary);
+    margin-bottom: 18px;
+  }
+
+  .hero-desc {
+    font-size: 17px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    max-width: 620px;
+    margin: 0 auto 56px;
+    word-break: keep-all;
+  }
+
+  /* Action Cards (Main Section) */
+  .action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 28px;
+    max-width: 840px;
+    margin: 0 auto;
+  }
+
+  .card-box {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 40px 32px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: var(--shadow-md);
+    transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+  }
+
+  .card-box:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--brand-primary);
+  }
+
+  .card-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--brand-light);
+    color: var(--brand-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-bottom: 20px;
+  }
+
+  .card-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    letter-spacing: -0.3px;
+  }
+
+  .card-text {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+    line-height: 1.6;
+    word-break: keep-all;
+  }
+
+  .btn-action-primary {
+    width: 100%;
+    background: var(--brand-primary);
+    color: #FFFFFF;
+    border: none;
+    padding: 16px;
+    border-radius: var(--radius-md);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-action-primary:hover { background: var(--brand-hover); }
+
+  .guest-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .input-code {
+    width: 100%;
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-code:focus { border-color: var(--brand-primary); }
+
+  .btn-action-dark {
+    width: 100%;
+    background: var(--text-primary);
+    color: #FFFFFF;
+    border: none;
+    padding: 15px;
+    border-radius: var(--radius-md);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-action-dark:hover { background: #374151; }
+
+  /* Feature Info Section */
+  .info-features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    max-width: 840px;
+    margin: 80px auto 40px;
+    text-align: left;
+  }
+
+  .info-item {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 24px 20px;
+  }
+
+  .info-item h4 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text-primary);
+  }
+
+  .info-item p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* Modal (Auth Modal) */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.6);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal-box {
+    background: var(--card-bg);
+    border-radius: var(--radius-lg);
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    text-align: center;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 20px; right: 20px;
+    background: none; border: none;
+    font-size: 20px; color: var(--text-muted);
+    cursor: pointer;
+  }
+  .modal-close:hover { color: var(--text-primary); }
+
+  .modal-h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .modal-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+  }
+
+  /* Social Auth Buttons */
+  .social-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .btn-social-item {
+    width: 100%;
+    padding: 13px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn-social-item:hover { opacity: 0.9; }
+  .social-kakao { background: #FEE500; color: #191919; border: none; font-weight: 600; }
+  .social-naver { background: #03C75A; color: #FFFFFF; border: none; font-weight: 600; }
+  .social-google { background: #FFFFFF; color: #374151; }
+
+  .divider {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 20px 0;
+    position: relative;
+  }
+  .divider::before, .divider::after {
+    content: ''; position: absolute; top: 50%; width: 38%; height: 1px; background: var(--border-color);
+  }
+  .divider::before { left: 0; } .divider::after { right: 0; }
+
+  .form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: left;
+  }
+
+  .form-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .form-field input, .form-field select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    outline: none;
+    background: #FAFAFA;
+  }
+  .form-field input:focus, .form-field select:focus {
+    border-color: var(--brand-primary);
+    background: #FFFFFF;
+  }
+
+  .btn-submit-form {
+    width: 100%;
+    background: var(--brand-primary);
+    color: #FFFFFF;
+    border: none;
+    padding: 14px;
+    border-radius: var(--radius-md);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background 0.2s;
+  }
+  .btn-submit-form:hover { background: var(--brand-hover); }
+
+  footer {
+    border-top: 1px solid var(--border-color);
+    padding: 32px 24px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--card-bg);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="logo">Pic<span>Selec</span></a>
+  <div class="header-nav">
+    <div class="user-status-bar" id="userStatusBar">
+      <span><strong id="headerUserName">회원</strong>님</span>
+      <button class="btn-text" onclick="handleLogout()">로그아웃</button>
+    </div>
+    <button class="btn-header-primary" id="btnHeaderAuth" onclick="openAuthModal()">로그인 / 회원가입</button>
+  </div>
+</header>
+
+<main class="hero-section">
+  <div class="hero-tag">프리미엄 무설치 웨딩 셀렉 솔루션</div>
+  <h1 class="hero-title">가장 소중한 순간의 완성,<br>편안하고 안심되는 웨딩 사진 셀렉</h1>
+  <p class="hero-desc">별도의 프로그램 설치나 무거운 사진 업로드 없이,<br>내 컴퓨터의 사진을 안전하고 자유롭게 함께 골라보세요.</p>
+
+  <!-- 메인 역할 선택 카드 -->
+  <div class="action-grid">
+    
+    <!-- 호스트 카드 -->
+    <div class="card-box">
+      <div>
+        <div class="card-icon">📁</div>
+        <h3 class="card-title">내 PC 사진으로 셀렉하기</h3>
+        <p class="card-text">컴퓨터에 저장된 웨딩 원본 사진 폴더를 열고 룸을 개설합니다. (프로그램 다운로드 없음)</p>
+      </div>
+      <button class="btn-action-primary" onclick="startHost()">사진 폴더 열기</button>
+    </div>
+
+    <!-- 게스트 카드 -->
+    <div class="card-box">
+      <div>
+        <div class="card-icon">📱</div>
+        <h3 class="card-title">참여 코드로 입장하기</h3>
+        <p class="card-text">전달받은 셀렉 룸 코드를 입력하여 실시간 동시 셀렉에 참여합니다.</p>
+      </div>
+      <div class="guest-input-group">
+        <input type="text" class="input-code" id="inputRoomCode" placeholder="룸 코드 입력 (예: wps-7k9x)" maxlength="16">
+        <button class="btn-action-dark" onclick="joinGuest()">셀렉 룸 입장</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 핵심 특징 4가지 -->
+  <div class="info-features">
+    <div class="info-item">
+      <h4>실시간 동시 셀렉</h4>
+      <p>신랑님과 신부님의 기기가 실시간으로 연동되어 함께 고를 수 있습니다.</p>
+    </div>
+    <div class="info-item">
+      <h4>1:1 비교 토너먼트</h4>
+      <p>비슷한 컷들을 양쪽에 배치하여 최고의 베스트 사진을 가려냅니다.</p>
+    </div>
+    <div class="info-item">
+      <h4>별점 및 의견 메모</h4>
+      <p>사진마다 점수를 부여하고 요청사항을 자유롭게 남길 수 있습니다.</p>
+    </div>
+    <div class="info-item">
+      <h4>보정 요청서 가공</h4>
+      <p>작가 전달용 보정 요청사항이 엑셀 서식으로 1초 만에 생성됩니다.</p>
+    </div>
+  </div>
+</main>
+
+<!-- 회원가입 & 로그인 모달 -->
+<div class="modal-overlay" id="modalAuth">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeAuthModal()">✕</button>
+    <h2 class="modal-h2">반갑습니다</h2>
+    <p class="modal-sub">PicSelec 서비스를 이용하시려면 로그인이 필요합니다.</p>
+
+    <!-- 소셜 로그인 3종 -->
+    <div class="social-group">
+      <button class="btn-social-item social-kakao" onclick="handleSocialAuth('카카오')">카카오로 시작하기</button>
+      <button class="btn-social-item social-naver" onclick="handleSocialAuth('네이버')">네이버로 시작하기</button>
+      <button class="btn-social-item social-google" onclick="handleSocialAuth('구글')">Google로 시작하기</button>
+    </div>
+
+    <div class="divider">또는 이메일로 시작</div>
+
+    <!-- 이메일 로그인/가입 폼 -->
+    <form class="form-stack" onsubmit="handleAuthSubmit(event)">
+      <div class="form-field">
+        <label>이메일 주소</label>
+        <input type="email" id="authEmail" placeholder="example@wedding.com" required>
+      </div>
+      <div class="form-field">
+        <label>비밀번호</label>
+        <input type="password" id="authPassword" placeholder="비밀번호 입력" required minlength="6">
+      </div>
+      <button type="submit" class="btn-submit-form">계속하기</button>
+    </form>
+  </div>
+</div>
+
+<footer>
+  <p>© 2026 PicSelec. All rights reserved. | Premium Wedding Photo Selection</p>
+</footer>
+
+<script>
+let currentUser = localStorage.getItem('picselec_user');
+
+function checkAuthStatus() {
+  if (currentUser) {
+    document.getElementById('btnHeaderAuth').style.display = 'none';
+    document.getElementById('userStatusBar').style.display = 'flex';
+    document.getElementById('headerUserName').textContent = currentUser;
+  } else {
+    document.getElementById('btnHeaderAuth').style.display = 'inline-block';
+    document.getElementById('userStatusBar').style.display = 'none';
+  }
+}
+checkAuthStatus();
+
+function handleLogout() {
+  localStorage.removeItem('picselec_user');
+  currentUser = null;
+  checkAuthStatus();
+}
+
+function openAuthModal() {
+  document.getElementById('modalAuth').classList.add('open');
+}
+function closeAuthModal() {
+  document.getElementById('modalAuth').classList.remove('open');
+}
+
+function handleSocialAuth(provider) {
+  onAuthSuccess(provider + ' 회원');
+}
+
+function handleAuthSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('authEmail').value;
+  const nick = email.split('@')[0];
+  onAuthSuccess(nick);
+}
+
+function onAuthSuccess(userName) {
+  currentUser = userName;
+  localStorage.setItem('picselec_user', userName);
+  checkAuthStatus();
+  closeAuthModal();
+}
+
+function startHost() {
+  if (!currentUser) {
+    openAuthModal();
+    return;
+  }
+  location.href = '/app?mode=host';
+}
+
+function joinGuest() {
+  if (!currentUser) {
+    openAuthModal();
+    return;
+  }
+  const code = document.getElementById('inputRoomCode').value.trim();
+  if (!code) {
+    alert('전달받으신 셀렉 룸 코드를 입력해 주세요.');
+    return;
+  }
+  location.href = '/app?mode=guest&room=' + encodeURIComponent(code);
+}
+</script>
+</body>
+</html>
