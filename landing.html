@@ -669,10 +669,19 @@ function checkAuthStatus() {
 }
 checkAuthStatus();
 
-// URL 파라미터 소셜로그인 리다이렉트 성공 체크
+// URL 파라미터 소셜로그인 리다이렉트 성공 체크 및 네이버 검수용 캡처 모드
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('social_auth') === 'success') {
   onAuthSuccess({ email: 'kakao_user@picselec.com', name: '카카오 회원', provider: 'kakao' });
+}
+if (urlParams.get('naver_proof') === 'true') {
+  openAuthModal('signup');
+  setTimeout(() => {
+    document.getElementById('signupEmail').value = 'bride@picselec.com';
+    document.getElementById('signupName').value = '이신부';
+    document.getElementById('signupBirthday').value = '05-20';
+    setGender('female');
+  }, 100);
 }
 
 function handleLogout() {
