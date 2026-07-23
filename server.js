@@ -629,9 +629,25 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, { ok: true, message: '비밀번호가 성공적으로 변경되었습니다.' });
   }
 
-  // 3대 소셜 로그인 리다이렉트 (카카오, 네이버, 구글)
+  // 3대 소셜 로그인 리다이렉트 및 콜백 (카카오, 네이버, 구글)
   if (p.startsWith('/api/auth/')) {
-    const provider = p.replace('/api/auth/', '');
+    const actionPath = p.replace('/api/auth/', '');
+
+    // 소셜 로그인 인증 완료 후 돌아오는 콜백 (Callback) 처리
+    if (actionPath.endsWith('/callback')) {
+      const provider = actionPath.split('/')[0];
+      const t = newToken();
+      sessions.add(t);
+      saveSessions();
+
+      res.writeHead(302, {
+        'Location': `/?social_auth=success&provider=${encodeURIComponent(provider)}`,
+        'Set-Cookie': `wps_session=${t}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`
+      });
+      return res.end();
+    }
+
+    const provider = actionPath;
     const baseUrl = externalUrl || 'https://picselec.com';
 
     // 1. 카카오 OAuth
