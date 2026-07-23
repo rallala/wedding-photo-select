@@ -18,12 +18,17 @@ const os = require('os');
 const { URL } = require('url');
 
 // ---------- Supabase Auth (관리자 권한: SERVICE_ROLE_KEY, 절대 클라이언트에 노출 금지) ----------
+// 여기서 예외가 나면(모듈 없음/URL 형식 오류 등) 서버 전체가 죽지 않고 이 기능만 비활성화되도록 방어
 let supabaseAdmin = null;
-if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  const { createClient } = require('@supabase/supabase-js');
-  supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false }
-  });
+try {
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const { createClient } = require('@supabase/supabase-js');
+    supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+  }
+} catch (e) {
+  console.error('Supabase admin client 초기화 실패(계정삭제/네이버연동 비활성화됨):', e.message);
 }
 
 // ---------- 설정 ----------
