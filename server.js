@@ -596,6 +596,39 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // 비밀번호 재설정/변경 API (SHA-256 암호화 업데이트)
+  if (p === '/api/auth/reset-password' && req.method === 'POST') {
+    const b = await readBody(req);
+    const { email, new_password } = b;
+
+    if (!email || !new_password) {
+      return sendJSON(res, { ok: false, error: '이메일과 새 비밀번호를 입력해 주세요.' }, 400);
+    }
+
+    const passRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&^])[A-Za-z\d@$!%*#?&^]{8,}$/;
+    if (!passRegex.test(new_password)) {
+      return sendJSON(res, { ok: false, error: '새 비밀번호는 8자 이상, 영문자, 숫자, 특수문자(!@#$%^&*)를 모두 포함해야 합니다.' }, 400);
+    }
+
+    const crypto = require('crypto');
+    const newPasswordHash = crypto.createHash('sha256').update(new_password + 'picselec_salt_2026').digest('hex');
+
+    // Supabase DB 비밀번호 업데이트
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+      fetch(`${process.env.SUPABASE_URL}/rest/v1/users?email=eq.${encodeURIComponent(email)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({ password_hash: newPasswordHash })
+      }).catch(e => console.error('Supabase password reset update error:', e.message));
+    }
+
+    return sendJSON(res, { ok: true, message: '비밀번호가 성공적으로 변경되었습니다.' });
+  }
+
   // 소셜 로그인 간편 리다이렉트 (카카오, 네이버, 구글)
   if (p.startsWith('/api/auth/')) {
     const provider = p.replace('/api/auth/', '');
