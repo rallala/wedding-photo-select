@@ -532,9 +532,15 @@ const server = http.createServer(async (req, res) => {
     const b = await readBody(req);
     const { email, password, name, gender, birth_year, birthday, provider } = b;
 
-    if (!email || !password) {
-      return sendJSON(res, { ok: false, error: '이메일과 비밀번호는 필수입니다.' }, 400);
+    // 비밀번호 검증 (8자 이상, 영문+숫자+특수문자 포함)
+    const passRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&^])[A-Za-z\d@$!%*#?&^]{8,}$/;
+    if (!passRegex.test(password)) {
+      return sendJSON(res, { ok: false, error: '비밀번호는 8자 이상, 영문자, 숫자, 특수문자(!@#$%^&*)를 모두 포함해야 합니다.' }, 400);
     }
+
+    // 비밀번호 SHA-256 단방향 솔트 암호화 (복호화 불가능한 안전한 해싱)
+    const crypto = require('crypto');
+    const passwordHash = crypto.createHash('sha256').update(password + 'picselec_salt_2026').digest('hex');
 
     const t = newToken();
     sessions.add(t);
@@ -542,6 +548,7 @@ const server = http.createServer(async (req, res) => {
 
     const userObj = {
       email,
+      password_hash: passwordHash,
       name: name || email.split('@')[0],
       gender: gender || 'male',
       birth_year: birth_year || 1995,
