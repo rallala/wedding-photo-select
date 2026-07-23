@@ -753,6 +753,10 @@ if (urlParams.get('social_auth') === 'success') {
 
   localStorage.setItem('picselec_user_session', JSON.stringify(currentUser));
   history.replaceState({}, document.title, window.location.pathname);
+
+  setTimeout(() => {
+    alert(`🎉 ${name}님 환영합니다!\n${provider.toUpperCase()} 계정으로 성공적으로 로그인되었습니다.`);
+  }, 100);
 }
 
 if (urlParams.get('social_auth') === 'need_key') {

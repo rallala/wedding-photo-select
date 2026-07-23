@@ -652,15 +652,17 @@ const server = http.createServer(async (req, res) => {
   // 3대 소셜 로그인 리다이렉트 및 콜백 (카카오, 네이버, 구글)
   if (p.startsWith('/api/auth/')) {
     const actionPath = p.replace('/api/auth/', '');
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'picselec.com';
+    const baseUrl = `${proto}://${host}`;
 
     // 소셜 로그인 인증 완료 후 돌아오는 콜백 (Callback) 처리
     if (actionPath.endsWith('/callback')) {
       const provider = actionPath.split('/')[0];
       const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       const code = parsedUrl.searchParams.get('code');
-      const baseUrl = externalUrl || 'https://picselec.com';
 
-      let userName = '소셜 회원';
+      let userName = `${provider.toUpperCase()} 회원`;
       let userEmail = `${provider}_user@picselec.com`;
       let userGender = null;
       let userBirthYear = null;
@@ -786,7 +788,6 @@ const server = http.createServer(async (req, res) => {
     }
 
     const provider = actionPath;
-    const baseUrl = externalUrl || 'https://picselec.com';
 
     // 1. 카카오 OAuth
     if (provider === 'kakao') {
