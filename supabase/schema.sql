@@ -56,6 +56,12 @@ drop policy if exists "host updates own project" on public.projects;
 create policy "host updates own project" on public.projects
   for update to authenticated using (host_id = auth.uid());
 
+-- 잘못된 폴더로 고정돼버린 프로젝트를 되돌릴 방법이 없었던 문제 대응: 호스트가 자기 프로젝트를
+-- 삭제하고 새로 만들 수 있게 함 (project_members/project_state는 on delete cascade로 함께 삭제됨).
+drop policy if exists "host deletes own project" on public.projects;
+create policy "host deletes own project" on public.projects
+  for delete to authenticated using (host_id = auth.uid());
+
 -- project_members: 본인 멤버십 또는 내가 호스트인 프로젝트의 멤버 목록만 조회. 본인 자리로만 참여 가능.
 drop policy if exists "read relevant memberships" on public.project_members;
 create policy "read relevant memberships" on public.project_members

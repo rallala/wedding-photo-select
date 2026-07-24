@@ -852,13 +852,26 @@ async function refreshMyProjects() {
         <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escHtml(p.title)}</div>
         <div style="font-size:11px; color:var(--text-secondary);">${p.folder_name ? '📂 ' + escHtml(p.folder_name) : '폴더 미선택'} · 코드 ${escHtml(p.room_code)}</div>
       </div>
-      <button class="btn-action-dark" style="flex-shrink:0; padding:6px 12px; font-size:12px;" onclick="openProject('${p.id}')">열기</button>
+      <div style="display:flex; gap:6px; flex-shrink:0;">
+        <button class="btn-action-dark" style="padding:6px 12px; font-size:12px;" onclick="openProject('${p.id}')">열기</button>
+        <button style="padding:6px 10px; font-size:12px; background:none; border:1px solid var(--border-color); border-radius:var(--radius-md); color:#EF4444; cursor:pointer;" onclick="deleteProject('${p.id}', '${escHtml(p.title).replace(/'/g, "\\'")}')" title="프로젝트 삭제">🗑️</button>
+      </div>
     </div>
   `).join('');
 }
 
 function openProject(id) {
   location.href = '/app?mode=host&project=' + encodeURIComponent(id);
+}
+
+// 잘못된 폴더로 고정된 프로젝트를 되돌릴 방법이 없어서, 삭제 후 새로 만들 수 있게 함.
+// (project_members/project_state는 schema.sql의 on delete cascade로 함께 삭제됨)
+async function deleteProject(id, title) {
+  if (!confirm(`"${title}" 프로젝트를 삭제하시겠습니까?\n연결된 폴더 지정, 선택/메모/별점 내역이 모두 사라지며 되돌릴 수 없습니다.`)) return;
+
+  const { error } = await sb.from('projects').delete().eq('id', id);
+  if (error) { alert('삭제에 실패했습니다: ' + error.message); return; }
+  refreshMyProjects();
 }
 
 async function createProject() {

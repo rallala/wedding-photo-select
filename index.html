@@ -236,6 +236,7 @@
 
 <header class="topbar">
   <a href="/" class="brand">Pic<span>Selec</span></a>
+  <span id="projectTitleBadge" style="display:none; align-items:center; gap:6px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:6px 12px; font-size:13px; font-weight:700; color:var(--text-main); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
 
   <button class="tbtn primary" id="btnFolderOpen">사진 폴더 선택/변경</button>
   <button class="tbtn" id="btnSmartAnalyze">✨ 스마트 분석 (유사 컷 / 눈감음)</button>
@@ -410,6 +411,50 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 $('#roomCodeVal').textContent = state.roomCode;
 
+// ---------- 썸네일 캐시(IndexedDB) ----------
+// 사진 업로드 없이 P2P/브라우저 로컬로만 돌아가는 구조라, 폴더를 다시 열거나(호스트) 같은 룸에
+// 재접속(게스트)할 때마다 2천 장을 처음부터 다시 리사이즈/재전송하지 않도록 브라우저에 캐시해둠.
+// 키는 (범위 + 폴더/파일명 + 용량 + 수정시각)이라 파일이 실제로 바뀌면 자동으로 캐시 미스가 됨.
+const IDB_NAME = 'picselec-cache', IDB_STORE = 'thumbs';
+let idbPromise = null;
+function openIdb() {
+  if (idbPromise) return idbPromise;
+  idbPromise = new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { reject(new Error('no-indexeddb')); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return idbPromise;
+}
+async function idbGet(key) {
+  try {
+    const db = await openIdb();
+    return await new Promise((resolve, reject) => {
+      const r = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    });
+  } catch (_) { return null; }
+}
+async function idbSet(key, blob) {
+  try {
+    const db = await openIdb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(blob, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (_) {}
+}
+function thumbCacheKey(scope, folder, name, size, mtime) {
+  return `${scope}::${folder || ''}/${name}::${size || 0}::${mtime || 0}`;
+}
+
 // ---------- 셀렉룸: 사진 업로드 없이 WebRTC로 호스트→게스트 직접 전송, 시그널링은 Supabase Realtime ----------
 // 선택/노트/별점은 project_state 테이블(Postgres)에 영속화되어, 한 번에 다 못 고르고
 // 나중에 같은 프로젝트(=같은 폴더)로 다시 들어와도 이어집니다. (supabase/schema.sql 참고)
@@ -451,6 +496,17 @@ function broadcastRoom(event, payload) {
 
 function updateRoomBadge() {
   if (room.isHost) $('#roomCodeVal').textContent = `${room.roomCode} (${room.connectedGuests}명 접속)`;
+}
+
+// 지금 어느 프로젝트를 열고 있는지 화면에 계속 표시 — 폴더를 고르기 전에도 바로 보여서,
+// 프로젝트를 헷갈려 엉뚱한 폴더를 고르는 걸 방지한다.
+async function showProjectTitleBadge(projectId) {
+  if (!sb || !projectId) return;
+  const { data, error } = await sb.from('projects').select('title').eq('id', projectId).single();
+  if (error || !data) return;
+  const badge = $('#projectTitleBadge');
+  badge.textContent = '📌 ' + data.title;
+  badge.style.display = 'inline-flex';
 }
 
 // 카카오톡으로 접속 코드 보내기 (JS 키 미설정 시 클립보드 복사로 대체)
@@ -601,7 +657,18 @@ function wireHostDataChannel(dc) {
   dc.onopen = async () => {
     room.connectedGuests++;
     updateRoomBadge();
-    await sendManifestAndPhotos(dc);
+    // 사진 바이트는 아직 안 보내고 매니페스트만 먼저 전송 — 게스트가 자기 캐시와 대조해서
+    // 실제로 없는 것만 알려주면(need-list) 그때 그만큼만 전송한다.
+    dc.send(JSON.stringify({
+      type: 'manifest',
+      photos: state.photos.map(p => ({ id: p.id, name: p.name, folder: p.folder, size: p.size || 0, mtime: p.mtime || 0 })),
+      total: state.photos.length
+    }));
+  };
+  dc.onmessage = (e) => {
+    if (typeof e.data !== 'string') return;
+    let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
+    if (msg.type === 'need-list') sendPhotoSubset(dc, msg.ids);
   };
   dc.onclose = () => {
     room.connectedGuests = Math.max(0, room.connectedGuests - 1);
@@ -618,15 +685,12 @@ async function waitForBufferedAmountLow(dc) {
   });
 }
 
-async function sendManifestAndPhotos(dc) {
-  dc.send(JSON.stringify({
-    type: 'manifest',
-    photos: state.photos.map(p => ({ id: p.id, name: p.name, folder: p.folder })),
-    total: state.photos.length
-  }));
-
+// 게스트가 자기 IndexedDB 캐시에 이미 갖고 있지 않다고 알려온(need-list) 사진들만 전송
+async function sendPhotoSubset(dc, ids) {
+  const idSet = new Set(ids);
   // p.url은 폴더를 열 때 이미 작게 축소해둔 썸네일이라, 원본을 다시 디코딩하지 않고 그대로 전송
   for (const p of state.photos) {
+    if (!idSet.has(p.id)) continue;
     if (dc.readyState !== 'open') return;
     let blob;
     try { blob = await fetch(p.url).then(r => r.blob()); } catch (_) { continue; }
@@ -649,6 +713,7 @@ async function initRoomGuest() {
   $('#progressModal').classList.add('open');
   $('#progressTitle').textContent = '📡 셀렉룸에 연결하는 중입니다...';
   $('#progressSub').textContent = '호스트가 사진 폴더를 여는 즉시 자동으로 전송이 시작돼요.';
+  showProjectTitleBadge(room.projectId);
 
   await loadOrInitProjectState(room.projectId);
 
@@ -682,8 +747,9 @@ async function handleSignalAtGuest(payload) {
 function wireGuestDataChannel(dc) {
   dc.binaryType = 'arraybuffer';
   let building = null;
+  const manifestMeta = new Map(); // id -> {size, mtime}, 수신한 사진을 캐시에 저장할 때 키를 다시 만들기 위함
 
-  dc.onmessage = (e) => {
+  dc.onmessage = async (e) => {
     if (typeof e.data !== 'string') {
       if (building) building.chunks.push(new Uint8Array(e.data));
       return;
@@ -693,7 +759,7 @@ function wireGuestDataChannel(dc) {
     if (msg.type === 'manifest') {
       state.photos = msg.photos.map(p => ({ ...p, url: '' }));
       state.byId.clear();
-      state.photos.forEach(p => state.byId.set(p.id, p));
+      state.photos.forEach(p => { state.byId.set(p.id, p); manifestMeta.set(p.id, { size: p.size, mtime: p.mtime }); });
 
       const selEl = $('#folderSelect');
       state.folders = Array.from(new Set(state.photos.map(p => p.folder))).sort();
@@ -703,16 +769,42 @@ function wireGuestDataChannel(dc) {
         selEl.innerHTML += `<option value="${esc(f)}">📂 ${esc(f)} (${count}장)</option>`;
       });
 
-      room.receivedCount = 0;
+      // 같은 룸에 재접속하는 경우, 이전에 받아 캐시해둔 사진은 다시 전송받지 않고
+      // 정말 없는(새로 추가됐거나 바뀐) 것만 호스트에 요청한다.
+      const missing = [];
+      let cacheHits = 0;
+      for (const p of state.photos) {
+        const key = thumbCacheKey(room.projectId, p.folder, p.name, p.size, p.mtime);
+        const cached = await idbGet(key);
+        if (cached) { p.url = URL.createObjectURL(cached); cacheHits++; }
+        else missing.push(p.id);
+      }
+
+      room.receivedCount = cacheHits;
       room.totalCount = msg.total;
-      $('#progressTitle').textContent = `📸 사진 ${msg.total}장을 받는 중입니다...`;
+
+      if (missing.length === 0) {
+        $('#progressModal').classList.remove('open');
+        renderGrid(); updateCounts(); renderSidebar();
+        setTimeout(runSmartAnalysisAsync, 500);
+      } else {
+        const pct = Math.round((cacheHits / msg.total) * 100);
+        $('#progressTitle').textContent = `📸 사진 ${missing.length}장을 받는 중입니다... (캐시 재사용 ${cacheHits}장)`;
+        $('#progressBarFill').style.width = pct + '%';
+        $('#progressPercent').textContent = `${pct}% (${cacheHits} / ${msg.total} 장)`;
+      }
+      dc.send(JSON.stringify({ type: 'need-list', ids: missing }));
     } else if (msg.type === 'img-start') {
       building = { id: msg.id, mime: msg.mime, chunks: [] };
     } else if (msg.type === 'img-end') {
       if (building && building.id === msg.id) {
         const blob = new Blob(building.chunks, { type: building.mime });
         const p = state.byId.get(building.id);
-        if (p) p.url = URL.createObjectURL(blob);
+        if (p) {
+          p.url = URL.createObjectURL(blob);
+          const meta = manifestMeta.get(building.id);
+          if (meta) idbSet(thumbCacheKey(room.projectId, p.folder, p.name, meta.size, meta.mtime), blob);
+        }
         room.receivedCount++;
         const pct = room.totalCount ? Math.round((room.receivedCount / room.totalCount) * 100) : 0;
         $('#progressBarFill').style.width = pct + '%';
@@ -858,22 +950,44 @@ async function loadPhotosFromDirectory(dirHandle) {
   $('#progressModal').classList.add('open');
   $('#progressTitle').textContent = `📸 사진 ${total}장을 준비하는 중입니다...`;
 
-  for (let i = 0; i < total; i++) {
-    const item = rawEntries[i];
-    const file = await item.entry.getFile();
-    const thumbBlob = await makeThumbBlob(file, 640, 0.85);
-    const url = URL.createObjectURL(thumbBlob || file);
-    const photoObj = { id: item.entry.name, name: item.entry.name, folder: item.folder, file, url };
-    state.photos.push(photoObj);
-    state.byId.set(photoObj.id, photoObj);
+  // 폴더를 다시 여는 경우를 위해 (폴더명+파일명+용량+수정시각)으로 캐시를 먼저 확인하고,
+  // 없을 때만 리사이즈. 여러 장을 동시에 디코딩/리사이즈하도록 워커 풀로 병렬 처리.
+  const scope = dirHandle.name;
+  const photoObjs = new Array(total);
+  let doneCount = 0, cacheHitCount = 0;
+  const CONCURRENCY = 6;
+  let nextIdx = 0;
 
-    if (i % 30 === 0 || i === total - 1) {
-      const pct = Math.round(((i + 1) / total) * 100);
-      $('#progressBarFill').style.width = pct + '%';
-      $('#progressPercent').textContent = `${pct}% (${i + 1} / ${total} 장 준비됨)`;
-      await new Promise(r => requestAnimationFrame(r));
+  async function worker() {
+    while (nextIdx < total) {
+      const i = nextIdx++;
+      const item = rawEntries[i];
+      const file = await item.entry.getFile();
+      const key = thumbCacheKey(scope, item.folder, item.entry.name, file.size, file.lastModified);
+
+      let thumbBlob = await idbGet(key);
+      if (thumbBlob) cacheHitCount++;
+      else {
+        thumbBlob = await makeThumbBlob(file, 640, 0.85);
+        if (thumbBlob) idbSet(key, thumbBlob);
+      }
+      const url = URL.createObjectURL(thumbBlob || file);
+      photoObjs[i] = { id: item.entry.name, name: item.entry.name, folder: item.folder, file, url, size: file.size, mtime: file.lastModified };
+
+      doneCount++;
+      if (doneCount % 20 === 0 || doneCount === total) {
+        const pct = Math.round((doneCount / total) * 100);
+        $('#progressBarFill').style.width = pct + '%';
+        $('#progressPercent').textContent = `${pct}% (${doneCount} / ${total} 장 준비됨 · 캐시 재사용 ${cacheHitCount}장)`;
+        await new Promise(r => requestAnimationFrame(r));
+      }
     }
   }
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+  state.photos = photoObjs;
+  state.byId.clear();
+  photoObjs.forEach(p => state.byId.set(p.id, p));
 
   $('#progressModal').classList.remove('open');
   renderGrid();
@@ -1486,6 +1600,7 @@ $('#btnFolderOpen').onclick = openFolderPicker;
 // 진입 모드에 따라 분기: 셀렉룸 호스트 / 셀렉룸 게스트 / 레거시 로컬 서버 모드
 if (room.isHost) {
   $('#btnFolderOpen').textContent = '📁 사진 폴더 선택 → 셀렉룸 시작';
+  showProjectTitleBadge(PROJECT_ID_FROM_URL);
   renderGrid();
 } else if (room.isGuest && PROJECT_ID_FROM_URL) {
   initRoomGuest();
