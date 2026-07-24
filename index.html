@@ -789,6 +789,15 @@ async function handleSignalAtGuest(payload) {
       if (e.candidate) broadcastRoom('signal', { to: payload.from, from: CLIENT_ID, kind: 'ice', candidate: e.candidate });
     };
     pc.ondatachannel = (e) => wireGuestDataChannel(e.channel);
+    // STUN만으로는 서로 다른 이동통신사/방화벽 뒤에 있을 때 연결 자체가 안 맺어지는 경우가 있다
+    // (그러면 아무 에러도 없이 그냥 "사진을 받는 중"에서 영원히 멈춰있는 것처럼 보임) — 그 상태를
+    // 감지해서 최소한 사용자에게 실패했다고는 알려준다.
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'disconnected'].includes(pc.connectionState)) {
+        $('#progressTitle').textContent = '⚠️ 호스트와 연결하지 못했습니다';
+        $('#progressSub').textContent = '네트워크(와이파이/모바일 데이터) 상태를 확인하고 링크를 다시 열어 주세요.';
+      }
+    };
 
     await pc.setRemoteDescription(payload.sdp);
     const answer = await pc.createAnswer();

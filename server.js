@@ -595,8 +595,12 @@ const server = http.createServer(async (req, res) => {
       const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       const code = parsedUrl.searchParams.get('code');
 
-      let userName = `${provider.toUpperCase()} 회원`;
-      let userEmail = `${provider}_user@picselec.com`;
+      // userEmail은 반드시 실제 프로필 조회에 성공했을 때만 채워진다 — 절대 공용 기본값을 쓰지 않음.
+      // (예전엔 여기 고정된 "kakao_user@picselec.com" 같은 공용 더미 값이 있었는데, 토큰 교환이
+      // 실패하면(모바일에서 네트워크 문제 등으로 흔함) 그 공용 이메일로 매직링크가 발급돼서
+      // 실패한 사람 전원이 맨 처음 그 이메일로 가입된 계정 하나로 몰려 로그인되는 심각한 버그였음)
+      let userName = null;
+      let userEmail = null;
       let userGender = null;
       let userBirthYear = null;
       let userBirthday = null;
@@ -660,6 +664,15 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         console.error('OAuth profile fetch error:', err.message);
       }
+
+      // 토큰 교환/프로필 조회가 실패해서 실제 사용자를 특정 못 했으면(userEmail이 여전히 비어있으면),
+      // 절대로 다른 사람과 겹칠 수 있는 공용 계정으로 로그인시키지 않고 에러로 되돌린다.
+      if (!userEmail) {
+        console.error(`${provider} OAuth: 토큰 교환 또는 프로필 조회 실패로 사용자를 특정할 수 없음`);
+        res.writeHead(302, { 'Location': `/?social_auth=error&provider=${provider}` });
+        return res.end();
+      }
+      if (!userName) userName = `${provider === 'kakao' ? '카카오' : '네이버'} 회원`;
 
       // Supabase Auth에 실제 유저로 연동(federate): 없으면 생성, 있으면 매직링크 토큰 발급
       if (!supabaseAdmin) {
