@@ -629,6 +629,12 @@
       </div>
 
       <div class="form-field">
+        <label>닉네임 *</label>
+        <input type="text" id="extraNickname" placeholder="화면에 표시될 닉네임" maxlength="20" required>
+        <p style="font-size:11px; color:var(--text-secondary); margin-top:4px;">계정 자체(이메일/로그인)는 그대로 유지되고, 다른 사람에게 보이는 이 닉네임만 마이페이지에서 언제든 바꿀 수 있어요.</p>
+      </div>
+
+      <div class="form-field">
         <label>성별 선택 *</label>
         <div class="gender-selector">
           <button type="button" class="gender-btn active-male" id="btnExtraMale" onclick="setExtraGender('male')">💙 남성</button>
@@ -704,8 +710,15 @@
       </div>
 
       <div style="margin-bottom:10px;">
-        <div style="font-size:11px; color:var(--text-muted); font-weight:600;">이름 / 닉네임</div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:11px; color:var(--text-muted); font-weight:600;">닉네임</div>
+          <button type="button" onclick="openNicknameEdit()" style="background:none; border:none; color:var(--brand-primary); font-size:11px; font-weight:600; cursor:pointer; text-decoration:underline;">✏️ 변경</button>
+        </div>
         <div id="myPageName" style="font-size:14px; font-weight:600; color:var(--text-primary);">회원</div>
+        <div id="myPageNameEdit" style="display:none; gap:8px; margin-top:6px;">
+          <input type="text" id="myPageNameInput" maxlength="20" placeholder="새 닉네임" style="flex:1; padding:8px 10px; border:1px solid var(--border-color); border-radius:var(--radius-md); font-size:13px; background:#fff;">
+          <button type="button" onclick="saveNicknameEdit()" style="background:var(--brand-primary); color:#fff; border:none; border-radius:var(--radius-md); padding:8px 14px; font-size:12px; font-weight:600; cursor:pointer; flex-shrink:0;">저장</button>
+        </div>
       </div>
 
       <div style="display:flex; gap:16px; margin-bottom:10px;">
@@ -814,6 +827,8 @@ function checkAuthStatus() {
     if (currentUser.need_social_extra) {
       document.getElementById('extraEmailField').style.display = currentUser.needEmail ? 'block' : 'none';
       document.getElementById('extraEmail').required = currentUser.needEmail;
+      // 소셜 계정에서 받아온 이름을 기본값으로 채워주되, 마음에 안 들면 바로 바꿔서 제출 가능
+      document.getElementById('extraNickname').value = currentUser.name || '';
       document.getElementById('modalSocialExtra').classList.add('open');
     }
   } else {
@@ -973,6 +988,29 @@ function openMyPageModal() {
 }
 function closeMyPageModal() {
   document.getElementById('modalMyPage').classList.remove('open');
+  document.getElementById('myPageNameEdit').style.display = 'none';
+  document.getElementById('myPageName').style.display = 'block';
+}
+
+// 로그인 계정(내부 id/이메일)은 그대로 두고, 겉으로 보이는 닉네임만 여기서 바꾼다.
+function openNicknameEdit() {
+  document.getElementById('myPageNameInput').value = currentUser?.name || '';
+  document.getElementById('myPageName').style.display = 'none';
+  document.getElementById('myPageNameEdit').style.display = 'flex';
+  document.getElementById('myPageNameInput').focus();
+}
+
+async function saveNicknameEdit() {
+  const newName = document.getElementById('myPageNameInput').value.trim();
+  if (!newName) { alert('닉네임을 입력해 주세요.'); return; }
+
+  const { error } = await sb.auth.updateUser({ data: { name: newName } });
+  if (error) { alert('닉네임 변경에 실패했습니다: ' + error.message); return; }
+
+  document.getElementById('myPageName').textContent = newName;
+  document.getElementById('myPageNameEdit').style.display = 'none';
+  document.getElementById('myPageName').style.display = 'block';
+  alert('닉네임이 변경되었습니다!');
 }
 
 async function handleDeleteAccount() {
@@ -1153,13 +1191,15 @@ async function handleSocialExtraSubmit(e) {
   e.preventDefault();
   const birthYear = parseInt(document.getElementById('extraBirthYear').value, 10);
   const birthday = document.getElementById('extraBirthday').value.trim();
+  const nickname = document.getElementById('extraNickname').value.trim();
   const emailField = document.getElementById('extraEmailField');
   const contactEmail = emailField.style.display !== 'none' ? document.getElementById('extraEmail').value.trim() : null;
 
   // contact_email은 로그인용 Supabase Auth 이메일과 별개인 "연락처"일 뿐이라 별도 메타데이터로 저장합니다.
   // (실제 로그인 이메일을 바꾸면 우리가 만든 임시 @picselec.com 주소로도 확인 메일을 보내야 해서
   //  본인이 받을 수 없는 주소가 되어 버립니다.)
-  const data = { gender: selectedExtraGender, birth_year: birthYear, birthday };
+  // 계정을 식별하는 키(user.id/로그인 이메일)는 그대로 두고, 화면에 노출되는 닉네임(name)만 여기서 받는다.
+  const data = { gender: selectedExtraGender, birth_year: birthYear, birthday, name: nickname };
   if (contactEmail) { data.contact_email = contactEmail; data.need_email = false; }
 
   const { error } = await sb.auth.updateUser({ data });
