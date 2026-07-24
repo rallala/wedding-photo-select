@@ -211,7 +211,8 @@
 
   .cell-info-bar { padding: 8px 10px; background: var(--panel); font-size: 11px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
   .cell-info-bar .name { font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cell-info-bar .meta-tag { font-size: 10px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
+  .cell-info-bar .meta-line { font-size: 10px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
+  .cell-info-bar .meta-note { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 
   /* 팝업 모달 공통 */
   .modal-overlay {
@@ -1165,12 +1166,27 @@ function recalculateSimilarity() {
 function cellMetaHtml(id) {
   const r = state.ratings[id] || {};
   const notes = state.notes[id] || [];
-  const parts = [];
-  if (r.groom) parts.push(`<span style="color:var(--groom)">💙${r.groom}★</span>`);
-  if (r.bride) parts.push(`<span style="color:var(--bride)">🩷${r.bride}★</span>`);
-  if (notes.length) parts.push(`<span style="color:var(--brand-primary)">📝${notes.length}건</span>`);
-  if (!parts.length) return '';
-  return `<div class="meta-tag">${parts.join(' ')}</div>`;
+
+  const ratingParts = [];
+  if (r.groom) ratingParts.push(`<span style="color:var(--groom)">💙${r.groom}★</span>`);
+  if (r.bride) ratingParts.push(`<span style="color:var(--bride)">🩷${r.bride}★</span>`);
+
+  // 보정요청 내용 자체를 신랑/신부 줄로 나눠서 보여준다 — 라이트박스를 안 열어도 바로 보이게.
+  // 같은 사람이 메모를 여러 개 남겼으면 한 줄에 이어붙이고, 폭이 넘치면 CSS로 말줄임.
+  const groomNotes = notes.filter(n => n.user === 'groom').map(n => n.text).join(' · ');
+  const brideNotes = notes.filter(n => n.user === 'bride').map(n => n.text).join(' · ');
+  // 레거시 로컬 모드는 신랑/신부 외에 커스텀 참여자도 있을 수 있어, 그런 메모는 이름표를 붙여 표시
+  const otherNotes = notes.filter(n => n.user !== 'groom' && n.user !== 'bride');
+
+  const lines = [];
+  if (ratingParts.length) lines.push(`<div class="meta-line">${ratingParts.join(' ')}</div>`);
+  if (groomNotes) lines.push(`<div class="meta-line meta-note" style="color:var(--groom)" title="${esc(groomNotes)}">💙 ${esc(groomNotes)}</div>`);
+  if (brideNotes) lines.push(`<div class="meta-line meta-note" style="color:var(--bride)" title="${esc(brideNotes)}">🩷 ${esc(brideNotes)}</div>`);
+  otherNotes.forEach(n => {
+    lines.push(`<div class="meta-line meta-note" style="color:${esc(n.userColor || '#3B82F6')}" title="${esc(n.text)}">${esc(n.userName || n.user)}: ${esc(n.text)}</div>`);
+  });
+
+  return lines.join('');
 }
 
 function renderGrid() {
