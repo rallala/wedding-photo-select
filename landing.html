@@ -1215,8 +1215,13 @@ function handleSocialAuth(provider) {
       alert('Supabase 연동 정보가 설정되지 않았습니다. Vercel 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)를 확인해 주세요.');
       return;
     }
-    sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } })
-      .catch(err => alert('구글 로그인 오류: ' + (err.message || err)));
+    // prompt: 'select_account'가 없으면 브라우저에 이미 로그인된 구글 세션이 하나뿐일 때
+    // 계정 선택 화면 없이 곧장 로그인돼버려서 "누른 순간 바로 로그인됨"처럼 느껴짐 — 매번
+    // 계정 선택 화면을 띄우도록 강제한다.
+    sb.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } }
+    }).catch(err => alert('구글 로그인 오류: ' + (err.message || err)));
   } else {
     window.location.href = `/api/auth/${provider}`;
   }

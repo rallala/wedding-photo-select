@@ -175,10 +175,12 @@
   .cell {
     position: relative; width: 100%; background: var(--panel); border: 1px solid var(--border);
     border-radius: var(--radius); overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.03); transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03); transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s, border-width 0.15s;
     break-inside: avoid; margin-bottom: 18px;
   }
   .cell:hover { transform: translateY(-3px); border-color: var(--brand-primary); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+  /* 선택된 사진은 굵은 색 테두리로 눈에 띄게 — 테두리 색은 렌더링 시 신랑/신부 색으로 인라인 지정됨 */
+  .cell.mine { border-width: 3px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
   .imgwrap {
     position: relative; width: 100%; background: #F3F4F6;
     display: block; overflow: hidden;
@@ -207,7 +209,6 @@
     border: none; background: rgba(255,255,255,0.9); color: #9CA3AF; font-size: 16px; display: flex;
     align-items: center; justify-content: center; cursor: pointer; z-index: 5; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
   }
-  .cell.mine .heart { color: #fff; background: var(--bride); }
 
   .cell-info-bar { padding: 8px 10px; background: var(--panel); font-size: 11px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
   .cell-info-bar .name { font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1308,7 +1309,11 @@ function renderGrid() {
     cell.dataset.id = p.id;
 
     const mine = state.sel[state.who]?.has(p.id);
-    if (mine) cell.classList.add('mine');
+    const mineColor = ROLE_COLOR[state.who] || '#3B82F6';
+    if (mine) {
+      cell.classList.add('mine');
+      cell.style.borderColor = mineColor;
+    }
 
     const simGroup = state.similarGroups.get(p.id);
     const isEye = state.eyeClosedSet.has(p.id);
@@ -1319,7 +1324,7 @@ function renderGrid() {
         <div class="cell-zoom-overlay">🔍 크게 보기</div>
         ${simGroup ? `<div class="cell-similar-badge">📦 ${esc(simGroup)}</div>` : ''}
         ${isEye ? `<div class="cell-eye-badge">👁️ 눈감음 의심</div>` : ''}
-        <button class="heart">${mine ? '♥' : '♡'}</button>
+        <button class="heart" style="${mine ? `background:${mineColor};color:#fff;` : ''}">${mine ? '♥' : '♡'}</button>
       </div>
       <div class="cell-info-bar">
         <div class="name">${esc(p.name)}</div>
