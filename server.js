@@ -584,8 +584,8 @@ const server = http.createServer(async (req, res) => {
   // 막힙니다. 그래서 카카오도 네이버처럼 자체 OAuth 교환 후 Supabase 유저로 연동(federate)합니다.
   if (p.startsWith('/api/auth/')) {
     const actionPath = p.replace('/api/auth/', '');
-    const proto = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'picselec.com';
+    const proto = req.headers['x-forwarded-proto'] || (req.socket && req.socket.encrypted ? 'https' : 'http');
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
     const baseUrl = `${proto}://${host}`;
 
     // 소셜 로그인 인증 완료 후 돌아오는 콜백 (Callback) 처리
