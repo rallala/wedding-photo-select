@@ -437,15 +437,17 @@ $('#roomCodeVal').textContent = state.roomCode;
 // 사진 업로드 없이 P2P/브라우저 로컬로만 돌아가는 구조라, 폴더를 다시 열거나(호스트) 같은 룸에
 // 재접속(게스트)할 때마다 2천 장을 처음부터 다시 리사이즈/재전송하지 않도록 브라우저에 캐시해둠.
 // 키는 (범위 + 폴더/파일명 + 용량 + 수정시각)이라 파일이 실제로 바뀌면 자동으로 캐시 미스가 됨.
-const IDB_NAME = 'picselec-cache', IDB_STORE = 'thumbs';
+const IDB_NAME = 'picselec-cache', IDB_STORE = 'thumbs', IDB_HANDLE_STORE = 'dirhandles';
 let idbPromise = null;
 function openIdb() {
   if (idbPromise) return idbPromise;
   idbPromise = new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) { reject(new Error('no-indexeddb')); return; }
-    const req = indexedDB.open(IDB_NAME, 1);
+    const req = indexedDB.open(IDB_NAME, 2);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      if (!db.objectStoreNames.contains(IDB_HANDLE_STORE)) db.createObjectStore(IDB_HANDLE_STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -473,8 +475,34 @@ async function idbSet(key, blob) {
     });
   } catch (_) {}
 }
+// FileSystemDirectoryHandle 자체를 프로젝트 id로 저장해두면, 같은 프로젝트를 다시 열 때
+// 폴더를 새로 탐색할 필요 없이(권한만 다시 확인하고) 바로 이어서 열 수 있다.
+async function idbGetHandle(projectId) {
+  try {
+    const db = await openIdb();
+    return await new Promise((resolve, reject) => {
+      const r = db.transaction(IDB_HANDLE_STORE, 'readonly').objectStore(IDB_HANDLE_STORE).get(projectId);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    });
+  } catch (_) { return null; }
+}
+async function idbSetHandle(projectId, handle) {
+  try {
+    const db = await openIdb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_HANDLE_STORE, 'readwrite');
+      tx.objectStore(IDB_HANDLE_STORE).put(handle, projectId);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (_) {}
+}
+// 썸네일 생성 로직(예: 비율 왜곡 수정)이 바뀔 때마다 이 버전을 올려서, 예전 버그가 있던
+// 썸네일이 캐시에 남아 계속 재사용되는 일이 없도록 한다.
+const THUMB_CACHE_VERSION = 'v2';
 function thumbCacheKey(scope, folder, name, size, mtime) {
-  return `${scope}::${folder || ''}/${name}::${size || 0}::${mtime || 0}`;
+  return `${THUMB_CACHE_VERSION}::${scope}::${folder || ''}/${name}::${size || 0}::${mtime || 0}`;
 }
 
 // ---------- 셀렉룸: 사진 업로드 없이 WebRTC로 호스트→게스트 직접 전송, 시그널링은 Supabase Realtime ----------
@@ -918,12 +946,56 @@ async function loadPhotosFromServer() {
 }
 
 // 📁 브라우저 직접 폴더 열기
+// 프로젝트를 이미 폴더에 고정해 연 적이 있으면(=저장된 핸들이 있으면) 다시 폴더 탐색기를 띄우지
+// 않고 바로 이어서 연다. 브라우저 보안 정책상 완전 자동 허용은 안 되지만(세션이 바뀌면 권한을
+// 다시 확인해야 함), 그래도 전체 폴더 트리를 다시 찾아 들어가는 것보단 훨씬 가볍다 — 버튼 한 번만
+// 눌러서 "이 폴더 다시 써도 됨"만 확인하면 됨. 저장된 핸들 자체가 없을 때만(처음 여는 프로젝트)
+// 기존처럼 폴더를 새로 골라야 한다.
+async function tryAutoResumeFolder() {
+  if (!PROJECT_ID_FROM_URL) return;
+  const handle = await idbGetHandle(PROJECT_ID_FROM_URL);
+  if (!handle) return;
+
+  let perm;
+  try { perm = await handle.queryPermission({ mode: 'readwrite' }); } catch (_) { return; }
+
+  if (perm === 'granted') {
+    state.dirHandle = handle;
+    $('#btnFolderOpen').textContent = '📁 사진 폴더 선택/변경';
+    await loadPhotosFromDirectory(handle);
+    return;
+  }
+
+  const btn = $('#btnFolderOpen');
+  const resetToManualPicker = () => {
+    btn.textContent = '📁 사진 폴더 선택 → 셀렉룸 시작';
+    btn.onclick = openFolderPicker;
+  };
+
+  btn.textContent = '🔓 이전 폴더 접근 허용하고 열기';
+  btn.onclick = async () => {
+    try {
+      const granted = await handle.requestPermission({ mode: 'readwrite' });
+      if (granted === 'granted') {
+        state.dirHandle = handle;
+        btn.textContent = '📁 사진 폴더 선택/변경';
+        btn.onclick = openFolderPicker;
+        await loadPhotosFromDirectory(handle);
+        return;
+      }
+    } catch (_) {}
+    resetToManualPicker(); // 거부/실패하면 새로 폴더 찾는 기존 방식으로 폴백
+  };
+}
+
 async function openFolderPicker() {
   try {
     if ('showDirectoryPicker' in window) {
       // 최종 확정 시 이 폴더 안에 결과물 폴더를 바로 만들 수 있도록 readwrite로 요청
       const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
       state.dirHandle = dirHandle;
+      // 다음에 같은 프로젝트를 열 때 폴더를 새로 탐색하지 않고 바로 이어서 열 수 있도록 저장
+      if (room.isHost && PROJECT_ID_FROM_URL) idbSetHandle(PROJECT_ID_FROM_URL, dirHandle);
       await loadPhotosFromDirectory(dirHandle);
     } else {
       alert('크롬(Chrome), 엣지(Edge), 네이버 웨일 브라우저를 이용해 주세요.');
@@ -1015,6 +1087,9 @@ async function loadPhotosFromDirectory(dirHandle) {
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
+  // 촬영 타임스탬프 순 정렬(탐색 순서/파일명 순 아님)
+  photoObjs.sort((a, b) => (a.mtime - b.mtime) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+
   state.photos = photoObjs;
   state.byId.clear();
   photoObjs.forEach(p => state.byId.set(p.id, p));
@@ -1068,58 +1143,75 @@ async function detectEyesClosed(bitmap) {
 }
 
 // ⚖️ 황금 밸런스 유사 알고리즘 (감도 슬라이더 바 실시간 조율 연동!)
+// 새로고침 후 폴더를 다시 열면 이 함수가 다시 트리거되는데, 이전 실행이 아직 안 끝난 채로
+// state.hashesCache를 공유해서 쓰면 두 실행이 서로 뒤섞여 결과가 깨질 수 있다(그러면 유사 컷도,
+// 거기 기대는 토너먼트도 먹통이 됨). 토큰으로 오래된 실행은 결과를 버리게 하고, 각 실행은 자기
+// 로컬 배열에만 쌓다가 끝까지 살아남았을 때만 state에 반영한다. finally에서 항상
+// recalculateSimilarity를 부르므로, 눈감음 감지처럼 느릴 수 있는 부분이 멈춰도 유사 컷 계산 자체는
+// 살아남는다(눈감음 감지는 4초 넘으면 포기하고 "안 감음"으로 처리).
+let smartAnalysisToken = 0;
 async function runSmartAnalysisAsync() {
   if (state.photos.length === 0) return;
+  const myToken = ++smartAnalysisToken;
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 8; canvas.height = 8;
 
-  state.hashesCache = [];
+  const hashes = [];
   const total = state.photos.length;
 
-  for (let i = 0; i < total; i++) {
-    const p = state.photos[i];
-    let bitmap = null;
-    try {
-      // p.url은 이미 축소된 썸네일이라 원본을 다시 디코딩하지 않음 (2천 장대 폴더 메모리 부족 방지)
-      const blob = await fetch(p.url).then(r => r.blob());
-      bitmap = await createImageBitmap(blob);
+  try {
+    for (let i = 0; i < total; i++) {
+      if (smartAnalysisToken !== myToken) return; // 더 최신 실행이 시작됨 — 이 실행은 포기
 
-      ctx.drawImage(bitmap, 0, 0, 8, 8);
-      const imgData = ctx.getImageData(0, 0, 8, 8).data;
+      const p = state.photos[i];
+      let bitmap = null;
+      try {
+        // p.url은 이미 축소된 썸네일이라 원본을 다시 디코딩하지 않음 (2천 장대 폴더 메모리 부족 방지)
+        const blob = await fetch(p.url).then(r => r.blob());
+        bitmap = await createImageBitmap(blob);
 
-      const gray = new Array(64);
-      let sumR = 0, sumG = 0, sumB = 0;
-      for (let idx = 0; idx < 64; idx++) {
-        const o = idx * 4;
-        gray[idx] = (imgData[o] + imgData[o + 1] + imgData[o + 2]) / 3;
-        sumR += imgData[o]; sumG += imgData[o + 1]; sumB += imgData[o + 2];
+        ctx.drawImage(bitmap, 0, 0, 8, 8);
+        const imgData = ctx.getImageData(0, 0, 8, 8).data;
+
+        const gray = new Array(64);
+        let sumR = 0, sumG = 0, sumB = 0;
+        for (let idx = 0; idx < 64; idx++) {
+          const o = idx * 4;
+          gray[idx] = (imgData[o] + imgData[o + 1] + imgData[o + 2]) / 3;
+          sumR += imgData[o]; sumG += imgData[o + 1]; sumB += imgData[o + 2];
+        }
+
+        // 가로 그라디언트만 보던 걸 세로 그라디언트까지 더해 112비트로 — 구도/윤곽 판별력이 커져서
+        // 서로 다른 장면인데 우연히 비슷하게 잡히는 오탐이 줄어든다.
+        let hashStr = '';
+        for (let y = 0; y < 8; y++) {
+          for (let x = 0; x < 7; x++) hashStr += gray[y * 8 + x] > gray[y * 8 + x + 1] ? '1' : '0';
+        }
+        for (let x = 0; x < 8; x++) {
+          for (let y = 0; y < 7; y++) hashStr += gray[y * 8 + x] > gray[(y + 1) * 8 + x] ? '1' : '0';
+        }
+
+        hashes.push({ id: p.id, hash: hashStr, folder: p.folder, avgColor: [sumR / 64, sumG / 64, sumB / 64] });
+
+        const eyesClosed = await Promise.race([
+          detectEyesClosed(bitmap),
+          new Promise(resolve => setTimeout(() => resolve(false), 4000))
+        ]);
+        if (eyesClosed) state.eyeClosedSet.add(p.id);
+      } catch (_) {} finally {
+        if (bitmap) bitmap.close();
       }
 
-      // 가로 그라디언트만 보던 걸 세로 그라디언트까지 더해 112비트로 — 구도/윤곽 판별력이 커져서
-      // 서로 다른 장면인데 우연히 비슷하게 잡히는 오탐이 줄어든다.
-      let hashStr = '';
-      for (let y = 0; y < 8; y++) {
-        for (let x = 0; x < 7; x++) hashStr += gray[y * 8 + x] > gray[y * 8 + x + 1] ? '1' : '0';
-      }
-      for (let x = 0; x < 8; x++) {
-        for (let y = 0; y < 7; y++) hashStr += gray[y * 8 + x] > gray[(y + 1) * 8 + x] ? '1' : '0';
-      }
-
-      state.hashesCache.push({ id: p.id, hash: hashStr, folder: p.folder, avgColor: [sumR / 64, sumG / 64, sumB / 64] });
-
-      if (await detectEyesClosed(bitmap)) {
-        state.eyeClosedSet.add(p.id);
-      }
-    } catch (_) {} finally {
-      if (bitmap) bitmap.close();
+      if (i % 25 === 0) await new Promise(r => setTimeout(r, 10));
     }
-
-    if (i % 25 === 0) await new Promise(r => setTimeout(r, 10));
+  } finally {
+    if (smartAnalysisToken === myToken) {
+      state.hashesCache = hashes;
+      recalculateSimilarity();
+    }
   }
-
-  recalculateSimilarity();
 }
 
 // 🎯 슬라이더 연동 유사 컷 계산기 — 구도 해시(가로+세로 그라디언트) + 평균 색상, 둘 다 가까워야
@@ -1322,6 +1414,7 @@ function setRating(photoId, rating) {
     }).catch(_ => {});
   }
   renderLightboxExtra(photoId);
+  renderGrid(); // 썸네일 아래 별점 표시도 즉시 갱신
 }
 
 function saveNote() {
@@ -1354,6 +1447,7 @@ function saveNote() {
     }).catch(_ => {});
   }
   renderLightboxExtra(photoId);
+  renderGrid(); // 썸네일 아래 보정요청 텍스트도 즉시 갱신
 }
 
 let lbFullResUrl = null; // 라이트박스용으로 그때그때 만든 원본 URL — 다음 사진 열 때 바로 해제
@@ -1405,6 +1499,9 @@ function renderSidebar() {
   else if (state.sideTab === 'common') {
     list = Array.from(state.sel.groom).filter(id => state.sel.bride.has(id));
   }
+
+  // Set은 고른 순서(삽입 순서)라, 사진 촬영 타임스탬프 순으로 다시 정렬해서 보여준다
+  list.sort((a, b) => ((state.byId.get(a)?.mtime || 0) - (state.byId.get(b)?.mtime || 0)));
 
   list.forEach(id => {
     const p = state.byId.get(id);
@@ -1685,6 +1782,7 @@ if (room.isHost) {
   $('#btnFolderOpen').textContent = '📁 사진 폴더 선택 → 셀렉룸 시작';
   showProjectTitleBadge(PROJECT_ID_FROM_URL);
   renderGrid();
+  tryAutoResumeFolder();
 } else if (room.isGuest && PROJECT_ID_FROM_URL) {
   initRoomGuest();
 } else {

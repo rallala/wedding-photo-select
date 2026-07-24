@@ -340,7 +340,8 @@ function setRoot(p) {
   ROOT = abs;
   stateData.root = abs;
   const photos = scan(abs, abs);
-  photos.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
+  // 촬영/파일 타임스탬프 순 정렬(파일명 순 아님) — 같은 시각이면 경로로 안정 정렬
+  photos.sort((a, b) => (a.mtime - b.mtime) || a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }));
   PHOTOS = photos;
   PHOTO_IDS = new Set(photos.map(x => x.id));
   FOLDERS = Array.from(new Set(photos.map(x => x.folder))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
