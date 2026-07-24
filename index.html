@@ -239,6 +239,7 @@
 
   <button class="tbtn primary" id="btnFolderOpen">사진 폴더 선택/변경</button>
   <button class="tbtn" id="btnSmartAnalyze">✨ 스마트 분석 (유사 컷 / 눈감음)</button>
+  <button class="tbtn" id="btnTournament">🏆 1:1 토너먼트 (유사 컷)</button>
   <button class="tbtn" id="btnWhoChange">👤 <span id="whoLbl">신랑</span> (프로필/역할 변경)</button>
   <button class="tbtn" id="btnRoomShare">📱 룸 코드: <b id="roomCodeVal">wps-ready</b></button>
   <button class="tbtn" id="btnSideToggle">📋 선택 현황 (<b id="sideBadgeCount">0</b>)</button>
@@ -319,6 +320,47 @@
   </div>
 </div>
 
+<!-- 최종 확정 & 보정요청서 모달 -->
+<div class="modal-overlay" id="finalModal">
+  <div class="modal-card" style="max-width:480px; text-align:left;">
+    <h3 style="font-size:18px; font-weight:700; margin-bottom:6px; text-align:center;">🎉 최종 확정 &amp; 보정요청서</h3>
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:18px; text-align:center;">확정할 사진 범위를 선택해 주세요.</p>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="union" checked> 합집합 (신랑 또는 신부가 고른 전체)</label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="common"> 중복만 (둘 다 고른 사진)</label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="groom"> 신랑 선택만</label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="bride"> 신부 선택만</label>
+    </div>
+    <div id="finalSummary" style="font-size:13px; color:var(--text-main); background:#FAFAFA; border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:20px;">0장 확정 예정</div>
+    <div style="display:flex; gap:10px;">
+      <button class="tbtn" id="finalCancelBtn" style="flex:1; justify-content:center;">취소</button>
+      <button class="tbtn primary" id="finalConfirmBtn" style="flex:1; justify-content:center;">확정하고 내보내기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 1:1 비교 토너먼트 모달 -->
+<div class="modal-overlay" id="tournamentModal">
+  <div class="modal-card" style="max-width:820px;">
+    <h3 style="font-size:18px; font-weight:700; margin-bottom:4px;">🏆 1:1 비교 토너먼트</h3>
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;" id="tourProgress">그룹 준비 중...</p>
+    <div style="display:flex; gap:16px; margin-bottom:16px;">
+      <div style="flex:1; display:flex; flex-direction:column;">
+        <img id="tourImgA" src="" style="width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#F3F4F6;">
+        <button class="tbtn primary" id="tourPickA" style="width:100%; margin-top:8px; justify-content:center;">◀ 이 사진이 더 좋아요</button>
+      </div>
+      <div style="flex:1; display:flex; flex-direction:column;">
+        <img id="tourImgB" src="" style="width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#F3F4F6;">
+        <button class="tbtn primary" id="tourPickB" style="width:100%; margin-top:8px; justify-content:center;">이 사진이 더 좋아요 ▶</button>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="tbtn" id="tourSkipGroup" style="flex:1; justify-content:center;">이 그룹 건너뛰기</button>
+      <button class="tbtn" id="tourClose" style="flex:1; justify-content:center;">닫기</button>
+    </div>
+  </div>
+</div>
+
 <!-- Lightbox 사진 크게보기 뷰어 모달 -->
 <div class="lb" id="lb">
   <div class="lb-head">
@@ -360,6 +402,7 @@ const state = {
   sideTab: 'groom',
   sensLevel: 3, // 1~5 감도
   lbId: null,
+  dirHandle: null, // 브라우저로 연 원본 폴더 핸들(있으면 최종 확정 시 원본 복사에 사용)
   roomCode: 'wps-' + Math.random().toString(36).substring(2, 8)
 };
 
@@ -370,7 +413,17 @@ $('#roomCodeVal').textContent = state.roomCode;
 // ---------- 셀렉룸: 사진 업로드 없이 WebRTC로 호스트→게스트 직접 전송, 시그널링은 Supabase Realtime ----------
 // 선택/노트/별점은 project_state 테이블(Postgres)에 영속화되어, 한 번에 다 못 고르고
 // 나중에 같은 프로젝트(=같은 폴더)로 다시 들어와도 이어집니다. (supabase/schema.sql 참고)
-const sb = supabase.createClient('__SUPABASE_URL__', '__SUPABASE_ANON_KEY__');
+// 레거시 로컬 PIN 모드는 Supabase 없이도 동작해야 하므로, 키가 비어있으면(플레이스홀더 미치환)
+// createClient를 아예 호출하지 않음 — 안 그러면 "supabaseUrl is required" 예외로 이 스크립트 전체가
+// 중단되어 사진 그리드도, 폴더 선택도, 아무 버튼도 동작하지 않게 됨. 셀렉룸(sb.* 호출부)은 전부
+// room.isHost/room.isGuest일 때만 실행되고, 그 경로는 landing.html에서 이미 Supabase가 설정돼
+// 있어야만 들어올 수 있으므로 sb가 null이어도 안전함.
+let sb = null;
+try {
+  const sbUrl = '__SUPABASE_URL__';
+  const sbKey = '__SUPABASE_ANON_KEY__';
+  if (sbUrl && sbKey && !sbUrl.startsWith('__')) sb = supabase.createClient(sbUrl, sbKey);
+} catch (err) { console.error('Supabase init error:', err); }
 const roomParams = new URLSearchParams(location.search);
 const ROOM_MODE = roomParams.get('mode'); // 'host' | 'guest' | null(레거시 로컬 서버 모드)
 const PROJECT_ID_FROM_URL = roomParams.get('project') || null; // 호스트/게스트 모두 landing.html에서 URL로 프로젝트 id를 받음
@@ -754,7 +807,9 @@ async function loadPhotosFromServer() {
 async function openFolderPicker() {
   try {
     if ('showDirectoryPicker' in window) {
-      const dirHandle = await window.showDirectoryPicker();
+      // 최종 확정 시 이 폴더 안에 결과물 폴더를 바로 만들 수 있도록 readwrite로 요청
+      const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      state.dirHandle = dirHandle;
       await loadPhotosFromDirectory(dirHandle);
     } else {
       alert('크롬(Chrome), 엣지(Edge), 네이버 웨일 브라우저를 이용해 주세요.');
@@ -1225,6 +1280,205 @@ $('#views').onclick = (e) => {
   state.filter.view = btn.dataset.v;
   renderGrid();
 };
+
+// ---------- 최종 확정 & 보정요청서 ----------
+function computeFinalScopeIds(scope) {
+  const g = state.sel.groom, b = state.sel.bride;
+  if (scope === 'groom') return Array.from(g);
+  if (scope === 'bride') return Array.from(b);
+  if (scope === 'common') return Array.from(g).filter(id => b.has(id));
+  return Array.from(new Set([...g, ...b]));
+}
+
+function updateFinalSummary() {
+  const scope = document.querySelector('input[name="finalScope"]:checked')?.value || 'union';
+  const ids = computeFinalScopeIds(scope);
+  $('#finalSummary').textContent = `${ids.length}장이 확정 예정입니다.`;
+}
+document.querySelectorAll('input[name="finalScope"]').forEach(r => r.onchange = updateFinalSummary);
+
+function csvEscape(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// 작가 전달용 보정요청서: 별점/보정 메모를 엑셀(CSV)로 1초 만에 생성
+function buildCorrectionCSV(ids) {
+  const rows = [['파일명', '폴더', '신랑선택', '신부선택', '신랑별점', '신부별점', '보정요청사항']];
+  ids.forEach(id => {
+    const p = state.byId.get(id);
+    if (!p) return;
+    const r = state.ratings[id] || {};
+    const notes = (state.notes[id] || []).map(n => `[${n.userName || n.user}] ${n.text}`).join(' / ');
+    rows.push([p.name, p.folder || '', state.sel.groom.has(id) ? 'O' : '', state.sel.bride.has(id) ? 'O' : '', r.groom || '', r.bride || '', notes]);
+  });
+  const csv = rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+  return '﻿' + csv; // BOM: 엑셀에서 한글 깨짐 방지
+}
+
+function downloadTextFile(filename, text, mime = 'text/csv;charset=utf-8') {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function ensureWritePermission(handle) {
+  const opts = { mode: 'readwrite' };
+  try {
+    if ((await handle.queryPermission(opts)) === 'granted') return true;
+    if ((await handle.requestPermission(opts)) === 'granted') return true;
+  } catch (_) {}
+  return false;
+}
+
+// 브라우저로 연 원본 폴더(state.dirHandle) 안에 결과 폴더를 만들어 선택된 원본 파일을 복사
+async function copySelectedFilesToFolder(ids) {
+  if (!state.dirHandle) return { ok: false, reason: 'no-handle' };
+  if (!(await ensureWritePermission(state.dirHandle))) return { ok: false, reason: 'no-permission' };
+
+  const destName = '_최종셀렉_' + new Date().toISOString().slice(0, 10);
+  const destHandle = await state.dirHandle.getDirectoryHandle(destName, { create: true });
+
+  const usedNames = new Set();
+  let count = 0;
+  for (const id of ids) {
+    const p = state.byId.get(id);
+    if (!p || !p.file) continue;
+    let name = p.name, i = 1;
+    while (usedNames.has(name)) {
+      const dot = p.name.lastIndexOf('.');
+      const base = dot > -1 ? p.name.slice(0, dot) : p.name;
+      const ext = dot > -1 ? p.name.slice(dot) : '';
+      name = `${base}(${i})${ext}`; i++;
+    }
+    usedNames.add(name);
+    try {
+      const fh = await destHandle.getFileHandle(name, { create: true });
+      const w = await fh.createWritable();
+      await w.write(p.file);
+      await w.close();
+      count++;
+    } catch (_) {}
+  }
+  return { ok: true, count, total: ids.length, destName };
+}
+
+async function runFinalConfirm() {
+  const scope = document.querySelector('input[name="finalScope"]:checked')?.value || 'union';
+  const ids = computeFinalScopeIds(scope);
+  if (ids.length === 0) { alert('확정할 사진이 없어요. 먼저 사진을 선택해 주세요.'); return; }
+
+  $('#finalModal').classList.remove('open');
+
+  // 1) 보정요청서(CSV)는 호스트/게스트/레거시 모드 관계없이 즉시 다운로드
+  downloadTextFile(`보정요청서_${new Date().toISOString().slice(0, 10)}.csv`, buildCorrectionCSV(ids));
+
+  // 2) 원본 파일 복사는 원본 폴더에 실제 접근 가능한 쪽(브라우저로 폴더를 연 기기)에서만 가능
+  if (state.dirHandle) {
+    const r = await copySelectedFilesToFolder(ids);
+    if (r.ok) alert(`✅ 최종 확정 완료!\n- 사진 ${r.count}/${r.total}장이 "${r.destName}" 폴더로 복사되었습니다.\n- 보정요청서(CSV)도 함께 다운로드되었습니다.`);
+    else alert('보정요청서는 다운로드되었지만, 사진 폴더 쓰기 권한이 없어 원본 복사는 건너뛰었습니다.');
+  } else if (!ROOM_MODE) {
+    try {
+      const res = await fetch('/api/copy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, mode: 'keep' })
+      });
+      const data = await res.json();
+      if (data.ok) alert(`✅ 최종 확정 완료!\n- 사진 ${data.count}/${data.total}장이 "${data.dir}" 폴더로 복사되었습니다.\n- 보정요청서(CSV)도 함께 다운로드되었습니다.`);
+      else alert('보정요청서는 다운로드되었지만, 서버 복사 중 오류가 발생했습니다: ' + (data.error || ''));
+    } catch (e) {
+      alert('보정요청서는 다운로드되었지만, 서버 복사 요청에 실패했습니다.');
+    }
+  } else {
+    alert('보정요청서(CSV)가 다운로드되었습니다.\n(원본 사진 폴더에 접근 권한이 없는 게스트 기기라 사진 복사는 건너뜁니다. 폴더를 연 호스트 기기에서 확정하면 사진도 함께 복사돼요.)');
+  }
+}
+
+$('#btnFinal').onclick = () => { updateFinalSummary(); $('#finalModal').classList.add('open'); };
+$('#finalCancelBtn').onclick = () => $('#finalModal').classList.remove('open');
+$('#finalConfirmBtn').onclick = runFinalConfirm;
+
+// ---------- 1:1 비교 토너먼트 (유사 컷끼리 맞대결시켜 베스트 컷 가려내기) ----------
+const tour = { groups: [], idx: 0, queue: [], pair: null };
+
+function buildSimilarGroupLists() {
+  const map = new Map();
+  for (const [id, label] of state.similarGroups.entries()) {
+    if (!map.has(label)) map.set(label, []);
+    map.get(label).push(id);
+  }
+  return Array.from(map.values()).filter(arr => arr.length >= 2);
+}
+
+function startTournament() {
+  tour.groups = buildSimilarGroupLists();
+  if (tour.groups.length === 0) {
+    alert('비교할 유사 컷 그룹이 없어요. 먼저 "✨ 스마트 분석"을 실행해 유사 컷을 찾아주세요.');
+    return;
+  }
+  tour.idx = 0;
+  $('#tournamentModal').classList.add('open');
+  loadTourGroup();
+}
+
+function loadTourGroup() {
+  if (tour.idx >= tour.groups.length) {
+    $('#tournamentModal').classList.remove('open');
+    alert(`🏆 토너먼트 완료! 총 ${tour.groups.length}개 유사 컷 그룹에서 베스트 컷을 선택했습니다.`);
+    renderGrid(); updateCounts(); renderSidebar();
+    return;
+  }
+  tour.queue = [...tour.groups[tour.idx]];
+  nextTourPair();
+}
+
+function nextTourPair() {
+  if (tour.queue.length <= 1) {
+    const winner = tour.queue[0];
+    if (winner) forceSelect(winner, true);
+    tour.idx++;
+    loadTourGroup();
+    return;
+  }
+  const a = tour.queue.shift(), b = tour.queue.shift();
+  tour.pair = [a, b];
+  const pa = state.byId.get(a), pb = state.byId.get(b);
+  $('#tourProgress').textContent = `그룹 ${tour.idx + 1} / ${tour.groups.length} · 이 그룹 남은 비교 대상 ${tour.queue.length + 2}장`;
+  $('#tourImgA').src = pa?.url || '';
+  $('#tourImgB').src = pb?.url || '';
+}
+
+function pickTourWinner(which) {
+  if (!tour.pair) return;
+  const [a, b] = tour.pair;
+  tour.queue.push(which === 'a' ? a : b);
+  tour.pair = null;
+  nextTourPair();
+}
+
+// 하트 토글이 아니라 특정 값으로 강제 선택(토너먼트 승자 자동 선택용)
+function forceSelect(id, val) {
+  const set = state.sel[state.who];
+  const already = set.has(id);
+  if (val && already || !val && !already) return;
+  if (val) set.add(id); else set.delete(id);
+
+  if (ROOM_MODE) persistProjectState();
+  else fetch('/api/select', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, who: state.who, selected: val })
+  }).catch(_ => {});
+}
+
+$('#btnTournament').onclick = startTournament;
+$('#tourPickA').onclick = () => pickTourWinner('a');
+$('#tourPickB').onclick = () => pickTourWinner('b');
+$('#tourSkipGroup').onclick = () => { tour.idx++; loadTourGroup(); };
+$('#tourClose').onclick = () => $('#tournamentModal').classList.remove('open');
 
 $('#btnSmartAnalyze').onclick = runSmartAnalysisAsync;
 $('#btnFolderOpen').onclick = openFolderPicker;
