@@ -130,15 +130,12 @@
 
   /* App Gallery & Sidebar Layout */
   .app-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
-  /* CSS columns 레이아웃은 자기 자신의 높이가 정해져 있으면(옆으로 overflow) 세로 스크롤이 아니라
-     새 컬럼을 옆으로 만들어버림 — 그래서 스크롤은 이 바깥 래퍼가 담당하고, .grid 자신은 높이 제한이
-     없어야(내용만큼 자라야) 전체 화면 너비를 다 쓰면서 아래로 쭉 이어진다. */
   .grid-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
-  .grid {
-    padding: 20px 24px;
-    columns: 200px;
-    column-gap: 18px;
-  }
+  /* CSS columns 레이아웃은 한 열을 위에서 아래로 끝까지 채운 뒤에야 다음(오른쪽) 열로 넘어가서,
+     맨 윗줄만 봐도 시간순으로 안 읽힘. 대신 JS가 열 컨테이너를 직접 만들어 사진을(왼→오, 위→아래로
+     읽히도록) 라운드로빈으로 나눠 담는다 — 열 개수/배치는 renderGrid()에서 계산. */
+  .grid { padding: 20px 24px; display: flex; align-items: flex-start; gap: 18px; }
+  .grid-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
 
   /* 우측 실시간 선택 현황 사이드바 */
   .sidebar {
@@ -176,7 +173,6 @@
     position: relative; width: 100%; background: var(--panel); border: 1px solid var(--border);
     border-radius: var(--radius); overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
     box-shadow: 0 2px 8px rgba(0,0,0,0.03); transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s, border-width 0.15s;
-    break-inside: avoid; margin-bottom: 18px;
   }
   .cell:hover { transform: translateY(-3px); border-color: var(--brand-primary); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
   /* 선택된 사진은 굵은 색 테두리로 눈에 띄게 — 테두리 색은 렌더링 시 신랑/신부 색으로 인라인 지정됨 */
@@ -837,7 +833,6 @@ function wireGuestDataChannel(dc) {
       if (missing.length === 0) {
         $('#progressModal').classList.remove('open');
         renderGrid(); updateCounts(); renderSidebar();
-        setTimeout(runSmartAnalysisAsync, 500);
       } else {
         const pct = Math.round((cacheHits / msg.total) * 100);
         $('#progressTitle').textContent = `📸 사진 ${missing.length}장을 받는 중입니다... (캐시 재사용 ${cacheHits}장)`;
@@ -867,7 +862,6 @@ function wireGuestDataChannel(dc) {
       renderGrid();
       updateCounts();
       renderSidebar();
-      setTimeout(runSmartAnalysisAsync, 500);
     }
   };
 }
@@ -933,8 +927,6 @@ async function loadPhotosFromServer() {
       renderGrid();
       updateCounts();
       renderSidebar();
-
-      setTimeout(runSmartAnalysisAsync, 500);
     } else {
       $('#progressModal').classList.remove('open');
       renderGrid();
@@ -1097,7 +1089,6 @@ async function loadPhotosFromDirectory(dirHandle) {
 
   $('#progressModal').classList.remove('open');
   renderGrid();
-  setTimeout(runSmartAnalysisAsync, 500);
 
   if (room.isHost) initRoomHost(dirHandle.name);
 }
@@ -1155,12 +1146,20 @@ async function runSmartAnalysisAsync() {
   if (state.photos.length === 0) return;
   const myToken = ++smartAnalysisToken;
 
+  const btn = $('#btnSmartAnalyze');
+  if (btn) btn.disabled = true;
+  const total = state.photos.length;
+  $('#progressModal').classList.add('open');
+  $('#progressTitle').textContent = '✨ 유사 컷 스마트 분석 중...';
+  $('#progressSub').textContent = '비슷한 사진과 눈 감은 사진을 찾고 있어요. 사진이 많으면 시간이 좀 걸려요.';
+  $('#progressBarFill').style.width = '0%';
+  $('#progressPercent').textContent = `0% (0 / ${total} 장)`;
+
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 8; canvas.height = 8;
 
   const hashes = [];
-  const total = state.photos.length;
 
   try {
     for (let i = 0; i < total; i++) {
@@ -1205,10 +1204,18 @@ async function runSmartAnalysisAsync() {
         if (bitmap) bitmap.close();
       }
 
+      if (smartAnalysisToken === myToken && (i % 10 === 0 || i === total - 1)) {
+        const pct = Math.round(((i + 1) / total) * 100);
+        $('#progressBarFill').style.width = pct + '%';
+        $('#progressPercent').textContent = `${pct}% (${i + 1} / ${total} 장)`;
+      }
+
       if (i % 25 === 0) await new Promise(r => setTimeout(r, 10));
     }
   } finally {
     if (smartAnalysisToken === myToken) {
+      if (btn) btn.disabled = false;
+      $('#progressModal').classList.remove('open');
       state.hashesCache = hashes;
       recalculateSimilarity();
     }
@@ -1282,28 +1289,51 @@ function cellMetaHtml(id) {
   return lines.join('');
 }
 
+// 별점/보정요청 하나 바뀔 때마다 전체 그리드를 다시 그리면(2천 장 다 재생성) 이미지가 깜빡이고
+// 레이아웃 열 배치도 다시 계산돼 다른 사진들까지 들썩였다 — 이 사진 하나의 메타 영역만 갈아끼운다.
+function updateCellMeta(id) {
+  const wrap = document.querySelector(`.cell[data-id="${CSS.escape(id)}"] .cell-meta-wrap`);
+  if (wrap) wrap.innerHTML = cellMetaHtml(id);
+}
+
 function renderGrid() {
   const grid = $('#grid');
   if (!grid) return;
-  grid.innerHTML = '';
 
   const photosList = state.photos || [];
 
   const filterView = state.filter.view;
   const filterFolder = state.filter.folder;
   const searchQ = state.filter.q.toLowerCase();
+  const otherWho = state.who === 'groom' ? 'bride' : 'groom';
 
-  photosList.forEach(p => {
-    if (filterFolder && p.folder !== filterFolder) return;
-    if (searchQ && !p.name.toLowerCase().includes(searchQ)) return;
-    if (filterView === 'mine' && !state.sel[state.who]?.has(p.id)) return;
-    if (filterView === 'other' && state.sel[state.who]?.has(p.id)) return;
+  const filtered = photosList.filter(p => {
+    if (filterFolder && p.folder !== filterFolder) return false;
+    if (searchQ && !p.name.toLowerCase().includes(searchQ)) return false;
+    if (filterView === 'mine' && !state.sel[state.who]?.has(p.id)) return false;
+    if (filterView === 'other' && !state.sel[otherWho]?.has(p.id)) return false;
     if (filterView === 'common') {
-      if (!state.sel.groom.has(p.id) || !state.sel.bride.has(p.id)) return;
+      if (!state.sel.groom.has(p.id) || !state.sel.bride.has(p.id)) return false;
     }
-    if (filterView === 'similar' && !state.similarGroups.has(p.id)) return;
-    if (filterView === 'eye' && !state.eyeClosedSet.has(p.id)) return;
+    if (filterView === 'similar' && !state.similarGroups.has(p.id)) return false;
+    if (filterView === 'eye' && !state.eyeClosedSet.has(p.id)) return false;
+    return true;
+  });
 
+  // 사진이 왼쪽→오른쪽, 위→아래로(=시간순으로) 읽히도록 열을 직접 만들어 라운드로빈으로 배치
+  const colWidth = 200, gap = 18;
+  const containerWidth = grid.clientWidth || 1000;
+  const numCols = Math.max(1, Math.floor((containerWidth + gap) / (colWidth + gap)));
+
+  grid.innerHTML = '';
+  const cols = Array.from({ length: numCols }, () => {
+    const col = document.createElement('div');
+    col.className = 'grid-col';
+    grid.appendChild(col);
+    return col;
+  });
+
+  filtered.forEach((p, idx) => {
     const cell = document.createElement('div');
     cell.className = 'cell';
     cell.dataset.id = p.id;
@@ -1328,8 +1358,7 @@ function renderGrid() {
       </div>
       <div class="cell-info-bar">
         <div class="name">${esc(p.name)}</div>
-        ${p.folder ? `<div class="folder-tag">📂 ${esc(p.folder)}</div>` : ''}
-        ${cellMetaHtml(p.id)}
+        <div class="cell-meta-wrap">${cellMetaHtml(p.id)}</div>
       </div>
     `;
 
@@ -1341,7 +1370,7 @@ function renderGrid() {
       openLightbox(p.id);
     };
 
-    grid.appendChild(cell);
+    cols[idx % numCols].appendChild(cell);
   });
 }
 
@@ -1419,7 +1448,7 @@ function setRating(photoId, rating) {
     }).catch(_ => {});
   }
   renderLightboxExtra(photoId);
-  renderGrid(); // 썸네일 아래 별점 표시도 즉시 갱신
+  updateCellMeta(photoId); // 썸네일 아래 별점 표시도 즉시 갱신(그리드 전체는 다시 안 그림)
 }
 
 function saveNote() {
@@ -1452,7 +1481,7 @@ function saveNote() {
     }).catch(_ => {});
   }
   renderLightboxExtra(photoId);
-  renderGrid(); // 썸네일 아래 보정요청 텍스트도 즉시 갱신
+  updateCellMeta(photoId); // 썸네일 아래 보정요청 텍스트도 즉시 갱신(그리드 전체는 다시 안 그림)
 }
 
 let lbFullResUrl = null; // 라이트박스용으로 그때그때 만든 원본 URL — 다음 사진 열 때 바로 해제
