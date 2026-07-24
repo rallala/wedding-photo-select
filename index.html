@@ -92,7 +92,7 @@
   .counts b { color: var(--text-main); font-weight: 700; }
   .cnt { display: inline-flex; align-items: center; gap: 5px; }
   .swatch { width: 10px; height: 10px; border-radius: 3px; }
-  .sw-g { background: var(--groom); } .sw-b { background: var(--bride); } .sw-c { background: var(--common); }
+  .sw-c { background: var(--common); }
 
   /* Controls */
   .controls {
@@ -169,14 +169,15 @@
   }
 
   /* Cell */
+  /* 테두리 두께를 선택 여부에 따라 바꾸면(1px<->3px) 사진이 미묘하게 커졌다 작아졌다 하며 흔들리므로,
+     두께는 항상 3px로 고정해두고 색만 투명<->선택한 사람 색으로 바꾼다(렌더링 시 인라인 지정). */
   .cell {
-    position: relative; width: 100%; background: var(--panel); border: 1px solid var(--border);
+    position: relative; width: 100%; background: var(--panel); border: 3px solid transparent;
     border-radius: var(--radius); overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.03); transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s, border-width 0.15s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03); transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
   }
   .cell:hover { transform: translateY(-3px); border-color: var(--brand-primary); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
-  /* 선택된 사진은 굵은 색 테두리로 눈에 띄게 — 테두리 색은 렌더링 시 신랑/신부 색으로 인라인 지정됨 */
-  .cell.mine { border-width: 3px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
+  .cell.mine { box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
   .imgwrap {
     position: relative; width: 100%; background: #F3F4F6;
     display: block; overflow: hidden;
@@ -208,8 +209,17 @@
 
   .cell-info-bar { padding: 8px 10px; background: var(--panel); font-size: 11px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
   .cell-info-bar .name { font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cell-info-bar .meta-line { font-size: 10px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
-  .cell-info-bar .meta-note { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+
+  /* 별점/보정요청은 칸 안에 줄로 넣으면 등록할 때마다 카드 높이가 바뀌어 그리드 전체가 들썩였다 —
+     대신 사진 위에 반투명 그라디언트 오버레이로 띄운다. absolute라 내용이 있든 없든(display 토글해도)
+     주변 레이아웃에 전혀 영향을 안 준다. */
+  .cell-meta-wrap {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; pointer-events: none;
+    background: linear-gradient(to top, rgba(17,24,39,0.8) 0%, rgba(17,24,39,0.4) 65%, rgba(17,24,39,0) 100%);
+    padding: 22px 8px 6px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .cell-meta-wrap .meta-line { font-size: 10px; font-weight: 700; color: #fff; display: flex; gap: 8px; align-items: center; }
+  .cell-meta-wrap .meta-note { font-weight: 500; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 
   /* 팝업 모달 공통 */
   .modal-overlay {
@@ -247,12 +257,7 @@
   <button class="tbtn" id="btnRoomShare">📱 룸 코드: <b id="roomCodeVal">wps-ready</b></button>
   <button class="tbtn" id="btnSideToggle">📋 선택 현황 (<b id="sideBadgeCount">0</b>)</button>
 
-  <div class="counts">
-    <span class="cnt"><span class="swatch sw-g"></span>신랑 <b id="cG">0</b></span>
-    <span class="cnt"><span class="swatch sw-b"></span>신부 <b id="cB">0</b></span>
-    <span class="cnt"><span class="swatch sw-c"></span>중복 <b id="cC">0</b></span>
-    <span class="cnt">합집합 <b id="cU">0</b></span>
-  </div>
+  <div class="counts" id="countsBar"></div>
 </header>
 
 <div class="controls">
@@ -270,14 +275,7 @@
     <b id="sensVal" style="color:var(--brand-primary)">보통 (3단계)</b>
   </div>
 
-  <div class="views" id="views">
-    <button data-v="all" class="active">전체</button>
-    <button data-v="mine">내 선택</button>
-    <button data-v="other">상대 선택</button>
-    <button data-v="common">중복만</button>
-    <button data-v="similar">📦 유사 컷만</button>
-    <button data-v="eye">👁️ 눈감음 의심</button>
-  </div>
+  <div class="views" id="views"></div>
   <button class="btn-final" id="btnFinal">최종 확정 &amp; 보정요청서</button>
 </div>
 
@@ -291,11 +289,7 @@
       <h3>📋 실시간 선택 현황</h3>
       <button id="sideCloseBtn" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--text-muted);">✕</button>
     </div>
-    <div class="sidebar-tabs">
-      <button class="side-tab active" id="tabSideGroom" onclick="switchSideTab('groom')">신랑 선택</button>
-      <button class="side-tab" id="tabSideBride" onclick="switchSideTab('bride')">신부 선택</button>
-      <button class="side-tab" id="tabSideCommon" onclick="switchSideTab('common')">중복 선택</button>
-    </div>
+    <div class="sidebar-tabs" id="sidebarTabs"></div>
     <div class="sidebar-body" id="sideGrid"></div>
   </aside>
 </div>
@@ -314,13 +308,16 @@
 
 <!-- 역할 변경 모달 -->
 <div class="modal-overlay" id="whoModal">
-  <div class="modal-card">
+  <div class="modal-card" style="max-width:480px;">
     <h3 style="font-size:20px; font-weight:700; margin-bottom:8px;">👤 누구의 역할로 선택하시나요?</h3>
-    <p style="font-size:13px; color:var(--text-muted); margin-bottom:24px;">선택하신 프로필로 사진 선택 하트(♥)가 기록됩니다.</p>
-    <div style="display:flex; gap:12px; margin-bottom:16px;">
-      <button class="tbtn primary" onclick="selectRole('groom')" style="flex:1; padding:14px; font-size:15px; background:var(--groom); justify-content:center;">💙 신랑으로 셀렉하기</button>
-      <button class="tbtn primary" onclick="selectRole('bride')" style="flex:1; padding:14px; font-size:15px; background:var(--bride); justify-content:center;">🩷 신부로 셀렉하기</button>
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">선택하신 프로필로 사진 선택 하트(♥)가 기록됩니다. 신랑·신부 외에 작가님, 친구 등 프로필을 추가할 수 있어요.</p>
+    <div id="whoProfileList" style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;"></div>
+
+    <div style="display:flex; gap:8px; margin-bottom:16px;">
+      <input type="text" id="newProfileName" placeholder="새 프로필 이름 (예: 작가님, 친구)" maxlength="10" style="flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; outline:none;">
+      <button class="tbtn primary" id="btnAddProfile" style="flex-shrink:0;">+ 추가</button>
     </div>
+
     <button class="tbtn" onclick="$('#whoModal').classList.remove('open')" style="width:100%; padding:10px; justify-content:center;">닫기</button>
   </div>
 </div>
@@ -330,12 +327,7 @@
   <div class="modal-card" style="max-width:480px; text-align:left;">
     <h3 style="font-size:18px; font-weight:700; margin-bottom:6px; text-align:center;">🎉 최종 확정 &amp; 보정요청서</h3>
     <p style="font-size:13px; color:var(--text-muted); margin-bottom:18px; text-align:center;">확정할 사진 범위를 선택해 주세요.</p>
-    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
-      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="union" checked> 합집합 (신랑 또는 신부가 고른 전체)</label>
-      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="common"> 중복만 (둘 다 고른 사진)</label>
-      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="groom"> 신랑 선택만</label>
-      <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="bride"> 신부 선택만</label>
-    </div>
+    <div id="finalScopeList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;"></div>
     <div id="finalSummary" style="font-size:13px; color:var(--text-main); background:#FAFAFA; border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:20px;">0장 확정 예정</div>
     <div style="display:flex; gap:10px;">
       <button class="tbtn" id="finalCancelBtn" style="flex:1; justify-content:center;">취소</button>
@@ -353,7 +345,7 @@
       <p style="font-size:13px; color:var(--text-muted); margin:8px 0 16px;">어떤 사진들끼리 맞대결시킬까요?</p>
       <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px; text-align:left;">
         <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="tourScope" value="similar" checked> 유사 컷 그룹끼리 (스마트 분석 기준 전체)</label>
-        <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="tourScope" value="common"> 중복 선택된 사진끼리 (신랑·신부 둘 다 고른 것 중 유사한 것들만)</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="tourScope" value="common"> 중복 선택된 사진끼리 (2명 이상이 고른 것 중 유사한 것들만)</label>
       </div>
       <div style="display:flex; gap:10px;">
         <button class="tbtn" id="tourSetupCancel" style="flex:1; justify-content:center;">닫기</button>
@@ -409,6 +401,11 @@
 <script>
 const state = {
   who: 'groom',
+  // 신랑/신부가 기본값이지만, 작가님·친구 등 프로필을 자유롭게 추가할 수 있다(profile 관련 함수 참고)
+  users: [
+    { id: 'groom', name: '신랑', color: '#3B82F6' },
+    { id: 'bride', name: '신부', color: '#EC4899' }
+  ],
   photos: [],
   folders: [],
   byId: new Map(),
@@ -606,25 +603,34 @@ async function bindProjectFolder(projectId, folderName) {
   return project;
 }
 
+function applyProjectUsers(users) {
+  if (Array.isArray(users) && users.length) state.users = users;
+  // 목록에 없는 프로필로 셀렉한 이력이 있어도(과거 삭제된 프로필 등) 조회 시 죽지 않도록 매번 보정
+  state.sel = {};
+  state.users.forEach(u => ensureSelSet(u.id));
+}
+
 async function loadOrInitProjectState(projectId) {
   const { data, error } = await sb.from('project_state').select('*').eq('project_id', projectId).maybeSingle();
   if (error) { console.error('프로젝트 상태 로드 실패:', error.message); return; }
 
   if (data) {
-    state.sel.groom = new Set(data.selections?.groom || []);
-    state.sel.bride = new Set(data.selections?.bride || []);
+    applyProjectUsers(data.users);
+    state.users.forEach(u => { state.sel[u.id] = new Set(data.selections?.[u.id] || []); });
     state.notes = data.notes || {};
     state.ratings = data.ratings || {};
   } else {
-    await sb.from('project_state').insert({ project_id: projectId, selections: {}, notes: {}, ratings: {} });
+    await sb.from('project_state').insert({ project_id: projectId, selections: {}, notes: {}, ratings: {}, users: state.users });
   }
 }
 
 function applyProjectStateRow(row) {
-  state.sel.groom = new Set(row.selections?.groom || []);
-  state.sel.bride = new Set(row.selections?.bride || []);
+  applyProjectUsers(row.users);
+  state.users.forEach(u => { state.sel[u.id] = new Set(row.selections?.[u.id] || []); });
   state.notes = row.notes || {};
   state.ratings = row.ratings || {};
+  renderViewButtons();
+  renderSideTabs();
   renderGrid();
   updateCounts();
   renderSidebar();
@@ -644,7 +650,7 @@ function persistProjectState() {
     const selections = {};
     for (const k of Object.keys(state.sel)) selections[k] = Array.from(state.sel[k]);
     const { error } = await sb.from('project_state')
-      .update({ selections, notes: state.notes, ratings: state.ratings, updated_at: new Date().toISOString() })
+      .update({ selections, notes: state.notes, ratings: state.ratings, users: state.users, updated_at: new Date().toISOString() })
       .eq('project_id', room.projectId);
     if (error) console.error('선택 저장 실패:', error.message);
   }, 300);
@@ -660,6 +666,7 @@ async function initRoomHost(folderName) {
   updateRoomBadge();
 
   await loadOrInitProjectState(room.projectId);
+  renderViewButtons(); renderSideTabs();
   renderGrid(); updateCounts(); renderSidebar();
 
   room.channel = sb.channel('room:' + room.projectId, { config: { broadcast: { self: false } } });
@@ -763,6 +770,7 @@ async function initRoomGuest() {
   showProjectTitleBadge(room.projectId);
 
   await loadOrInitProjectState(room.projectId);
+  renderViewButtons(); renderSideTabs();
 
   room.channel = sb.channel('room:' + room.projectId, { config: { broadcast: { self: false } } });
   room.channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
@@ -868,17 +876,123 @@ function wireGuestDataChannel(dc) {
 
 window.addEventListener('beforeunload', () => { room.channel?.unsubscribe(); });
 
-function selectRole(role) {
-  state.who = role;
-  $('#whoLbl').textContent = role === 'groom' ? '신랑' : '신부';
-  $('#whoModal').classList.remove('open');
+// ---------- 프로필(신랑/신부 + 추가 프로필: 작가님, 친구 등) ----------
+function ensureSelSet(id) {
+  if (!state.sel[id]) state.sel[id] = new Set();
+  return state.sel[id];
+}
+function userColor(id) {
+  return state.users.find(u => u.id === id)?.color || '#3B82F6';
+}
+function userName(id) {
+  return state.users.find(u => u.id === id)?.name || id;
+}
+const PROFILE_COLOR_PALETTE = ['#3B82F6', '#EC4899', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6', '#F472B6'];
+function nextProfileColor() {
+  const used = new Set(state.users.map(u => u.color));
+  return PROFILE_COLOR_PALETTE.find(c => !used.has(c)) || PROFILE_COLOR_PALETTE[state.users.length % PROFILE_COLOR_PALETTE.length];
+}
+
+function setActiveRole(who) {
+  state.who = who;
+  $('#whoLbl').textContent = userName(who);
+  renderViewButtons();
   renderGrid();
   renderSidebar();
+  updateCounts();
+}
+function selectRole(role) {
+  setActiveRole(role);
+  $('#whoModal').classList.remove('open');
+}
+
+function renderWhoModal() {
+  const listEl = $('#whoProfileList');
+  listEl.innerHTML = state.users.map(u => `
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="tbtn primary" onclick="selectRole('${u.id}')" style="flex:1; padding:14px; font-size:15px; background:${esc(u.color)}; justify-content:center;">
+        ${u.id === state.who ? '✓ ' : ''}${esc(u.name)}으로 셀렉하기
+      </button>
+      ${state.users.length > 1 ? `<button onclick="deleteProfile('${u.id}')" title="프로필 삭제" style="background:none; border:none; color:#EF4444; font-size:16px; cursor:pointer; padding:6px; flex-shrink:0;">🗑️</button>` : ''}
+    </div>
+  `).join('');
+}
+
+async function createProfile(name) {
+  name = (name || '').trim();
+  if (!name) { alert('이름을 입력해 주세요.'); return; }
+  const color = nextProfileColor();
+
+  if (ROOM_MODE) {
+    const id = 'u_' + Date.now().toString(36);
+    state.users.push({ id, name, color });
+    ensureSelSet(id);
+    persistProjectState();
+  } else {
+    try {
+      const res = await fetch('/api/user/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, color })
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error || '프로필 추가에 실패했습니다.'); return; }
+      state.users.push(data.user);
+      ensureSelSet(data.user.id);
+    } catch (e) { alert('프로필 추가 중 오류가 발생했습니다.'); return; }
+  }
+
+  $('#newProfileName').value = '';
+  renderWhoModal();
+  renderViewButtons();
+  renderSideTabs();
+  updateCounts();
+}
+
+async function deleteProfile(id) {
+  if (state.users.length <= 1) return;
+  if (!confirm('이 프로필을 삭제하시겠습니까?\n이 프로필로 이미 남긴 선택/별점/메모는 그대로 남고, 프로필 목록에서만 없어집니다.')) return;
+
+  state.users = state.users.filter(u => u.id !== id);
+  if (state.sideTab === id) state.sideTab = state.users[0].id;
+  if (state.who === id) setActiveRole(state.users[0].id);
+
+  if (ROOM_MODE) {
+    persistProjectState();
+  } else {
+    fetch('/api/user/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).catch(_ => {});
+  }
+
+  renderWhoModal();
+  renderViewButtons();
+  renderSideTabs();
+  renderSidebar();
+  updateCounts();
+}
+
+// 상단 필터 버튼: 전체/내 선택/(나 이외 각 프로필)/중복만/유사컷만/눈감음 — 프로필이 늘어나면 자동으로 늘어남
+function renderViewButtons() {
+  const viewsEl = $('#views');
+  const current = state.filter.view;
+  const otherButtons = state.users.filter(u => u.id !== state.who)
+    .map(u => `<button data-v="user:${u.id}" class="${current === 'user:' + u.id ? 'active' : ''}">${esc(u.name)} 선택</button>`)
+    .join('');
+
+  viewsEl.innerHTML = `
+    <button data-v="all" class="${current === 'all' ? 'active' : ''}">전체</button>
+    <button data-v="mine" class="${current === 'mine' ? 'active' : ''}">내 선택</button>
+    ${otherButtons}
+    <button data-v="common" class="${current === 'common' ? 'active' : ''}">중복만</button>
+    <button data-v="similar" class="${current === 'similar' ? 'active' : ''}">📦 유사 컷만</button>
+    <button data-v="eye" class="${current === 'eye' ? 'active' : ''}">👁️ 눈감음 의심</button>
+  `;
 }
 
 $('#btnWhoChange').onclick = () => {
+  renderWhoModal();
   $('#whoModal').classList.add('open');
 };
+$('#btnAddProfile').onclick = () => createProfile($('#newProfileName').value);
+$('#newProfileName').addEventListener('keydown', (e) => { if (e.key === 'Enter') createProfile(e.target.value); });
 
 // 🚀 사진 2,382장 자동 불러오기
 async function loadPhotosFromServer() {
@@ -915,8 +1029,9 @@ async function loadPhotosFromServer() {
         const stateRes = await fetch('/api/state');
         const sData = await stateRes.json();
         if (sData) {
-          state.sel.groom = new Set(sData.groom || []);
-          state.sel.bride = new Set(sData.bride || []);
+          if (Array.isArray(sData.users) && sData.users.length) state.users = sData.users;
+          state.sel = {};
+          state.users.forEach(u => { state.sel[u.id] = new Set((sData.selections && sData.selections[u.id]) || []); });
           state.ratings = sData.ratings || {};
           state.notes = sData.notes || {};
         }
@@ -924,6 +1039,8 @@ async function loadPhotosFromServer() {
 
       setTimeout(() => $('#progressModal').classList.remove('open'), 300);
 
+      renderViewButtons();
+      renderSideTabs();
       renderGrid();
       updateCounts();
       renderSidebar();
@@ -1267,23 +1384,27 @@ function cellMetaHtml(id) {
   const r = state.ratings[id] || {};
   const notes = state.notes[id] || [];
 
+  // 프로필이 몇 명이든(신랑/신부 + 작가님/친구 등) 각자 이름과 색으로 별점/보정요청 한 줄씩
   const ratingParts = [];
-  if (r.groom) ratingParts.push(`<span style="color:var(--groom)">💙${r.groom}★</span>`);
-  if (r.bride) ratingParts.push(`<span style="color:var(--bride)">🩷${r.bride}★</span>`);
+  state.users.forEach(u => {
+    if (r[u.id]) ratingParts.push(`<span style="color:${esc(u.color)}">${esc(u.name)} ${r[u.id]}★</span>`);
+  });
 
-  // 보정요청 내용 자체를 신랑/신부 줄로 나눠서 보여준다 — 라이트박스를 안 열어도 바로 보이게.
   // 같은 사람이 메모를 여러 개 남겼으면 한 줄에 이어붙이고, 폭이 넘치면 CSS로 말줄임.
-  const groomNotes = notes.filter(n => n.user === 'groom').map(n => n.text).join(' · ');
-  const brideNotes = notes.filter(n => n.user === 'bride').map(n => n.text).join(' · ');
-  // 레거시 로컬 모드는 신랑/신부 외에 커스텀 참여자도 있을 수 있어, 그런 메모는 이름표를 붙여 표시
-  const otherNotes = notes.filter(n => n.user !== 'groom' && n.user !== 'bride');
+  const byUser = new Map();
+  notes.forEach(n => {
+    if (!byUser.has(n.user)) byUser.set(n.user, []);
+    byUser.get(n.user).push(n);
+  });
 
   const lines = [];
   if (ratingParts.length) lines.push(`<div class="meta-line">${ratingParts.join(' ')}</div>`);
-  if (groomNotes) lines.push(`<div class="meta-line meta-note" style="color:var(--groom)" title="${esc(groomNotes)}">💙 ${esc(groomNotes)}</div>`);
-  if (brideNotes) lines.push(`<div class="meta-line meta-note" style="color:var(--bride)" title="${esc(brideNotes)}">🩷 ${esc(brideNotes)}</div>`);
-  otherNotes.forEach(n => {
-    lines.push(`<div class="meta-line meta-note" style="color:${esc(n.userColor || '#3B82F6')}" title="${esc(n.text)}">${esc(n.userName || n.user)}: ${esc(n.text)}</div>`);
+  byUser.forEach((userNotes, userId) => {
+    const u = state.users.find(x => x.id === userId);
+    const label = u ? u.name : (userNotes[0].userName || userId);
+    const color = u ? u.color : (userNotes[0].userColor || '#3B82F6');
+    const joined = userNotes.map(n => n.text).join(' · ');
+    lines.push(`<div class="meta-line meta-note" style="color:${esc(color)}" title="${esc(joined)}">${esc(label)} ${esc(joined)}</div>`);
   });
 
   return lines.join('');
@@ -1293,7 +1414,10 @@ function cellMetaHtml(id) {
 // 레이아웃 열 배치도 다시 계산돼 다른 사진들까지 들썩였다 — 이 사진 하나의 메타 영역만 갈아끼운다.
 function updateCellMeta(id) {
   const wrap = document.querySelector(`.cell[data-id="${CSS.escape(id)}"] .cell-meta-wrap`);
-  if (wrap) wrap.innerHTML = cellMetaHtml(id);
+  if (!wrap) return;
+  const html = cellMetaHtml(id);
+  wrap.innerHTML = html;
+  wrap.style.display = html ? '' : 'none'; // 내용 없으면 그라디언트 배경까지 숨겨서 사진을 안 가리게
 }
 
 function renderGrid() {
@@ -1305,15 +1429,15 @@ function renderGrid() {
   const filterView = state.filter.view;
   const filterFolder = state.filter.folder;
   const searchQ = state.filter.q.toLowerCase();
-  const otherWho = state.who === 'groom' ? 'bride' : 'groom';
 
   const filtered = photosList.filter(p => {
     if (filterFolder && p.folder !== filterFolder) return false;
     if (searchQ && !p.name.toLowerCase().includes(searchQ)) return false;
     if (filterView === 'mine' && !state.sel[state.who]?.has(p.id)) return false;
-    if (filterView === 'other' && !state.sel[otherWho]?.has(p.id)) return false;
+    if (filterView.startsWith('user:') && !state.sel[filterView.slice(5)]?.has(p.id)) return false;
     if (filterView === 'common') {
-      if (!state.sel.groom.has(p.id) || !state.sel.bride.has(p.id)) return false;
+      const pickedCount = state.users.filter(u => state.sel[u.id]?.has(p.id)).length;
+      if (pickedCount < 2) return false;
     }
     if (filterView === 'similar' && !state.similarGroups.has(p.id)) return false;
     if (filterView === 'eye' && !state.eyeClosedSet.has(p.id)) return false;
@@ -1339,7 +1463,7 @@ function renderGrid() {
     cell.dataset.id = p.id;
 
     const mine = state.sel[state.who]?.has(p.id);
-    const mineColor = ROLE_COLOR[state.who] || '#3B82F6';
+    const mineColor = userColor(state.who);
     if (mine) {
       cell.classList.add('mine');
       cell.style.borderColor = mineColor;
@@ -1347,6 +1471,7 @@ function renderGrid() {
 
     const simGroup = state.similarGroups.get(p.id);
     const isEye = state.eyeClosedSet.has(p.id);
+    const metaHtml = cellMetaHtml(p.id);
 
     cell.innerHTML = `
       <div class="imgwrap">
@@ -1354,11 +1479,11 @@ function renderGrid() {
         <div class="cell-zoom-overlay">🔍 크게 보기</div>
         ${simGroup ? `<div class="cell-similar-badge">📦 ${esc(simGroup)}</div>` : ''}
         ${isEye ? `<div class="cell-eye-badge">👁️ 눈감음 의심</div>` : ''}
+        <div class="cell-meta-wrap" style="${metaHtml ? '' : 'display:none;'}">${metaHtml}</div>
         <button class="heart" style="${mine ? `background:${mineColor};color:#fff;` : ''}">${mine ? '♥' : '♡'}</button>
       </div>
       <div class="cell-info-bar">
         <div class="name">${esc(p.name)}</div>
-        <div class="cell-meta-wrap">${cellMetaHtml(p.id)}</div>
       </div>
     `;
 
@@ -1375,7 +1500,7 @@ function renderGrid() {
 }
 
 function toggleSelect(id) {
-  const set = state.sel[state.who];
+  const set = ensureSelSet(state.who);
   if (set.has(id)) set.delete(id);
   else set.add(id);
   const selected = set.has(id);
@@ -1390,7 +1515,15 @@ function toggleSelect(id) {
     }).catch(_ => {});
   }
 
-  renderGrid();
+  // 지금 필터가 선택 여부에 따라 사진을 보이거나 감추는 뷰(내 선택/특정 프로필/중복만)일 때만
+  // 그리드를 통째로 다시 그린다(사진이 실제로 나타나거나 사라져야 하니까). 그 외(전체/유사컷/눈감음)는
+  // 이 사진 하나의 테두리·하트만 갈아끼워 다른 사진들이 들썩이거나 이미지가 깜빡이지 않게 한다.
+  const view = state.filter.view;
+  if (view === 'mine' || view === 'common' || view.startsWith('user:')) {
+    renderGrid();
+  } else {
+    updateCellSelection(id);
+  }
   updateCounts();
   renderSidebar();
 
@@ -1400,20 +1533,41 @@ function toggleSelect(id) {
   }
 }
 
-function updateCounts() {
-  const g = state.sel.groom.size;
-  const b = state.sel.bride.size;
-  let c = 0;
-  state.sel.groom.forEach(id => { if (state.sel.bride.has(id)) c++; });
-  $('#cG').textContent = g;
-  $('#cB').textContent = b;
-  $('#cC').textContent = c;
-  $('#cU').textContent = (g + b - c);
-  $('#sideBadgeCount').textContent = (g + b - c);
+function updateCellSelection(id) {
+  const cell = document.querySelector(`.cell[data-id="${CSS.escape(id)}"]`);
+  if (!cell) return;
+  const mine = !!state.sel[state.who]?.has(id);
+  const mineColor = userColor(state.who);
+  cell.classList.toggle('mine', mine);
+  cell.style.borderColor = mine ? mineColor : '';
+  const heart = cell.querySelector('.heart');
+  if (heart) {
+    heart.textContent = mine ? '♥' : '♡';
+    heart.style.background = mine ? mineColor : '';
+    heart.style.color = mine ? '#fff' : '';
+  }
 }
 
-const ROLE_LABEL = { groom: '신랑', bride: '신부' };
-const ROLE_COLOR = { groom: '#3B82F6', bride: '#EC4899' };
+function updateCounts() {
+  const unionIds = new Set();
+  state.users.forEach(u => (state.sel[u.id] || new Set()).forEach(id => unionIds.add(id)));
+
+  let commonCount = 0;
+  unionIds.forEach(id => {
+    if (state.users.filter(u => state.sel[u.id]?.has(id)).length >= 2) commonCount++;
+  });
+
+  const perUserHtml = state.users.map(u => `
+    <span class="cnt"><span class="swatch" style="background:${esc(u.color)}"></span>${esc(u.name)} <b>${(state.sel[u.id] || new Set()).size}</b></span>
+  `).join('');
+
+  $('#countsBar').innerHTML = `
+    ${perUserHtml}
+    <span class="cnt"><span class="swatch sw-c"></span>중복 <b>${commonCount}</b></span>
+    <span class="cnt">합집합 <b>${unionIds.size}</b></span>
+  `;
+  $('#sideBadgeCount').textContent = unionIds.size;
+}
 
 function renderLightboxExtra(photoId) {
   const myRating = (state.ratings[photoId] && state.ratings[photoId][state.who]) || 0;
@@ -1461,8 +1615,8 @@ function saveNote() {
   const note = {
     id: 'n_' + Date.now(),
     user: state.who,
-    userName: ROLE_LABEL[state.who] || state.who,
-    userColor: ROLE_COLOR[state.who] || '#3B82F6',
+    userName: userName(state.who),
+    userColor: userColor(state.who),
     text,
     time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
   };
@@ -1522,20 +1676,32 @@ window.onkeydown = (e) => {
   if (e.key === 'Escape') $('#lb').classList.remove('open');
 };
 
+// 사이드바 탭: 프로필마다 하나씩 + "중복"(2명 이상이 고른 사진)
+function renderSideTabs() {
+  const tabsEl = $('#sidebarTabs');
+  if (!tabsEl) return;
+  const profileTabs = state.users.map(u =>
+    `<button class="side-tab ${state.sideTab === u.id ? 'active' : ''}" onclick="switchSideTab('${u.id}')">${esc(u.name)}</button>`
+  ).join('');
+  tabsEl.innerHTML = profileTabs + `<button class="side-tab ${state.sideTab === 'common' ? 'active' : ''}" onclick="switchSideTab('common')">중복</button>`;
+}
+
 function renderSidebar() {
   const sideGrid = $('#sideGrid');
   if (!sideGrid) return;
   sideGrid.innerHTML = '';
 
   let list = [];
-  if (state.sideTab === 'groom') list = Array.from(state.sel.groom);
-  else if (state.sideTab === 'bride') list = Array.from(state.sel.bride);
-  else if (state.sideTab === 'common') {
-    list = Array.from(state.sel.groom).filter(id => state.sel.bride.has(id));
+  if (state.sideTab === 'common') {
+    list = state.photos.filter(p => state.users.filter(u => state.sel[u.id]?.has(p.id)).length >= 2).map(p => p.id);
+  } else {
+    list = Array.from(state.sel[state.sideTab] || []);
   }
 
   // Set은 고른 순서(삽입 순서)라, 사진 촬영 타임스탬프 순으로 다시 정렬해서 보여준다
   list.sort((a, b) => ((state.byId.get(a)?.mtime || 0) - (state.byId.get(b)?.mtime || 0)));
+
+  const badgeLabel = state.sideTab === 'common' ? '중복' : userName(state.sideTab);
 
   list.forEach(id => {
     const p = state.byId.get(id);
@@ -1544,7 +1710,7 @@ function renderSidebar() {
     item.className = 'side-cell';
     item.innerHTML = `
       <img src="${p.url}" alt="${esc(p.name)}" loading="lazy" decoding="async">
-      <span class="side-badge">${state.sideTab === 'common' ? '중복' : state.sideTab === 'groom' ? '신랑' : '신부'}</span>
+      <span class="side-badge">${esc(badgeLabel)}</span>
     `;
     item.onclick = () => openLightbox(id);
     sideGrid.appendChild(item);
@@ -1553,9 +1719,7 @@ function renderSidebar() {
 
 function switchSideTab(tab) {
   state.sideTab = tab;
-  $('#tabSideGroom').classList.toggle('active', tab === 'groom');
-  $('#tabSideBride').classList.toggle('active', tab === 'bride');
-  $('#tabSideCommon').classList.toggle('active', tab === 'common');
+  renderSideTabs();
   renderSidebar();
 }
 
@@ -1595,11 +1759,26 @@ $('#views').onclick = (e) => {
 
 // ---------- 최종 확정 & 보정요청서 ----------
 function computeFinalScopeIds(scope) {
-  const g = state.sel.groom, b = state.sel.bride;
-  if (scope === 'groom') return Array.from(g);
-  if (scope === 'bride') return Array.from(b);
-  if (scope === 'common') return Array.from(g).filter(id => b.has(id));
-  return Array.from(new Set([...g, ...b]));
+  if (scope === 'common') {
+    return state.photos.filter(p => state.users.filter(u => state.sel[u.id]?.has(p.id)).length >= 2).map(p => p.id);
+  }
+  if (scope.startsWith('user:')) {
+    return Array.from(state.sel[scope.slice(5)] || []);
+  }
+  const union = new Set();
+  state.users.forEach(u => (state.sel[u.id] || new Set()).forEach(id => union.add(id)));
+  return Array.from(union);
+}
+
+function renderFinalScopeList() {
+  const perUser = state.users.map(u =>
+    `<label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="user:${u.id}"> ${esc(u.name)} 선택만</label>`
+  ).join('');
+  $('#finalScopeList').innerHTML = `
+    <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="union" checked> 합집합 (누구든 고른 전체)</label>
+    <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="finalScope" value="common"> 중복만 (2명 이상이 고른 사진)</label>
+    ${perUser}
+  `;
 }
 
 function updateFinalSummary() {
@@ -1607,7 +1786,7 @@ function updateFinalSummary() {
   const ids = computeFinalScopeIds(scope);
   $('#finalSummary').textContent = `${ids.length}장이 확정 예정입니다.`;
 }
-document.querySelectorAll('input[name="finalScope"]').forEach(r => r.onchange = updateFinalSummary);
+$('#finalScopeList').addEventListener('change', updateFinalSummary);
 
 function csvEscape(v) {
   const s = String(v ?? '');
@@ -1616,13 +1795,15 @@ function csvEscape(v) {
 
 // 작가 전달용 보정요청서: 별점/보정 메모를 엑셀(CSV)로 1초 만에 생성
 function buildCorrectionCSV(ids) {
-  const rows = [['파일명', '폴더', '신랑선택', '신부선택', '신랑별점', '신부별점', '보정요청사항']];
+  const header = ['파일명', '폴더', ...state.users.flatMap(u => [`${u.name}선택`, `${u.name}별점`]), '보정요청사항'];
+  const rows = [header];
   ids.forEach(id => {
     const p = state.byId.get(id);
     if (!p) return;
     const r = state.ratings[id] || {};
     const notes = (state.notes[id] || []).map(n => `[${n.userName || n.user}] ${n.text}`).join(' / ');
-    rows.push([p.name, p.folder || '', state.sel.groom.has(id) ? 'O' : '', state.sel.bride.has(id) ? 'O' : '', r.groom || '', r.bride || '', notes]);
+    const perUser = state.users.flatMap(u => [state.sel[u.id]?.has(id) ? 'O' : '', r[u.id] || '']);
+    rows.push([p.name, p.folder || '', ...perUser, notes]);
   });
   const csv = rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
   return '﻿' + csv; // BOM: 엑셀에서 한글 깨짐 방지
@@ -1710,7 +1891,7 @@ async function runFinalConfirm() {
   }
 }
 
-$('#btnFinal').onclick = () => { updateFinalSummary(); $('#finalModal').classList.add('open'); };
+$('#btnFinal').onclick = () => { renderFinalScopeList(); updateFinalSummary(); $('#finalModal').classList.add('open'); };
 $('#finalCancelBtn').onclick = () => $('#finalModal').classList.remove('open');
 $('#finalConfirmBtn').onclick = runFinalConfirm;
 
@@ -1718,12 +1899,12 @@ $('#finalConfirmBtn').onclick = runFinalConfirm;
 const tour = { groups: [], idx: 0, queue: [], pair: null };
 
 // scope: 'similar'는 스마트 분석으로 잡힌 유사 컷 그룹 전체, 'common'은 그중에서도
-// 신랑·신부가 둘 다 고른(중복 선택) 사진들끼리만 — 서로 안 비슷한 사진끼리 억지로 붙이지 않도록
+// 2명 이상이 고른(중복 선택) 사진들끼리만 — 서로 안 비슷한 사진끼리 억지로 붙이지 않도록
 // 어느 쪽이든 항상 "유사 컷으로 감지된 것"을 전제로 그룹을 만든다.
 function buildSimilarGroupLists(scope) {
   const map = new Map();
   for (const [id, label] of state.similarGroups.entries()) {
-    if (scope === 'common' && !(state.sel.groom.has(id) && state.sel.bride.has(id))) continue;
+    if (scope === 'common' && state.users.filter(u => state.sel[u.id]?.has(id)).length < 2) continue;
     if (!map.has(label)) map.set(label, []);
     map.get(label).push(id);
   }
@@ -1741,7 +1922,7 @@ function startTournament() {
   tour.groups = buildSimilarGroupLists(scope);
   if (tour.groups.length === 0) {
     alert(scope === 'common'
-      ? '중복 선택된 사진 중 유사 컷 그룹이 없어요. 먼저 "✨ 스마트 분석"을 실행하고, 신랑·신부가 겹쳐서 고른 사진이 있는지 확인해 주세요.'
+      ? '중복 선택된 사진 중 유사 컷 그룹이 없어요. 먼저 "✨ 스마트 분석"을 실행하고, 2명 이상이 겹쳐서 고른 사진이 있는지 확인해 주세요.'
       : '비교할 유사 컷 그룹이 없어요. 먼저 "✨ 스마트 분석"을 실행해 유사 컷을 찾아주세요.');
     return;
   }
@@ -1788,7 +1969,7 @@ function pickTourWinner(which) {
 
 // 하트 토글이 아니라 특정 값으로 강제 선택(토너먼트 승자 자동 선택용)
 function forceSelect(id, val) {
-  const set = state.sel[state.who];
+  const set = ensureSelSet(state.who);
   const already = set.has(id);
   if (val && already || !val && !already) return;
   if (val) set.add(id); else set.delete(id);
@@ -1812,6 +1993,10 @@ $('#btnSmartAnalyze').onclick = runSmartAnalysisAsync;
 $('#btnFolderOpen').onclick = openFolderPicker;
 
 // 진입 모드에 따라 분기: 셀렉룸 호스트 / 셀렉룸 게스트 / 레거시 로컬 서버 모드
+renderViewButtons();
+renderSideTabs();
+updateCounts();
+
 if (room.isHost) {
   $('#btnFolderOpen').textContent = '📁 사진 폴더 선택 → 셀렉룸 시작';
   showProjectTitleBadge(PROJECT_ID_FROM_URL);

@@ -35,8 +35,13 @@ create table if not exists public.project_state (
   selections jsonb not null default '{}'::jsonb,
   notes jsonb not null default '{}'::jsonb,
   ratings jsonb not null default '{}'::jsonb,
+  users jsonb not null default '[{"id":"groom","name":"신랑","color":"#3B82F6"},{"id":"bride","name":"신부","color":"#EC4899"}]'::jsonb,
   updated_at timestamptz not null default now()
 );
+
+-- 구버전(신랑/신부 프로필 추가 기능 이전)을 이미 실행한 경우를 위한 마이그레이션
+alter table public.project_state add column if not exists users jsonb not null
+  default '[{"id":"groom","name":"신랑","color":"#3B82F6"},{"id":"bride","name":"신부","color":"#EC4899"}]'::jsonb;
 
 alter table public.projects enable row level security;
 alter table public.project_members enable row level security;
