@@ -130,11 +130,14 @@
 
   /* App Gallery & Sidebar Layout */
   .app-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+  /* CSS columns 레이아웃은 자기 자신의 높이가 정해져 있으면(옆으로 overflow) 세로 스크롤이 아니라
+     새 컬럼을 옆으로 만들어버림 — 그래서 스크롤은 이 바깥 래퍼가 담당하고, .grid 자신은 높이 제한이
+     없어야(내용만큼 자라야) 전체 화면 너비를 다 쓰면서 아래로 쭉 이어진다. */
+  .grid-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
   .grid {
-    flex: 1; overflow-y: auto; padding: 20px 24px;
+    padding: 20px 24px;
     columns: 200px;
     column-gap: 18px;
-    align-content: start;
   }
 
   /* 우측 실시간 선택 현황 사이드바 */
@@ -208,6 +211,7 @@
 
   .cell-info-bar { padding: 8px 10px; background: var(--panel); font-size: 11px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
   .cell-info-bar .name { font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell-info-bar .meta-tag { font-size: 10px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
 
   /* 팝업 모달 공통 */
   .modal-overlay {
@@ -280,7 +284,9 @@
 </div>
 
 <div class="app-layout">
-  <main class="grid" id="grid"></main>
+  <main class="grid-scroll">
+    <div class="grid" id="grid"></div>
+  </main>
 
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
@@ -344,20 +350,35 @@
 <div class="modal-overlay" id="tournamentModal">
   <div class="modal-card" style="max-width:820px;">
     <h3 style="font-size:18px; font-weight:700; margin-bottom:4px;">🏆 1:1 비교 토너먼트</h3>
-    <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;" id="tourProgress">그룹 준비 중...</p>
-    <div style="display:flex; gap:16px; margin-bottom:16px;">
-      <div style="flex:1; display:flex; flex-direction:column;">
-        <img id="tourImgA" src="" style="width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#F3F4F6;">
-        <button class="tbtn primary" id="tourPickA" style="width:100%; margin-top:8px; justify-content:center;">◀ 이 사진이 더 좋아요</button>
+
+    <div id="tourSetup">
+      <p style="font-size:13px; color:var(--text-muted); margin:8px 0 16px;">어떤 사진들끼리 맞대결시킬까요?</p>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:20px; text-align:left;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="tourScope" value="similar" checked> 유사 컷 그룹끼리 (스마트 분석 기준 전체)</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px; cursor:pointer;"><input type="radio" name="tourScope" value="common"> 중복 선택된 사진끼리 (신랑·신부 둘 다 고른 것 중 유사한 것들만)</label>
       </div>
-      <div style="flex:1; display:flex; flex-direction:column;">
-        <img id="tourImgB" src="" style="width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#F3F4F6;">
-        <button class="tbtn primary" id="tourPickB" style="width:100%; margin-top:8px; justify-content:center;">이 사진이 더 좋아요 ▶</button>
+      <div style="display:flex; gap:10px;">
+        <button class="tbtn" id="tourSetupCancel" style="flex:1; justify-content:center;">닫기</button>
+        <button class="tbtn primary" id="tourSetupStart" style="flex:1; justify-content:center;">토너먼트 시작</button>
       </div>
     </div>
-    <div style="display:flex; gap:10px;">
-      <button class="tbtn" id="tourSkipGroup" style="flex:1; justify-content:center;">이 그룹 건너뛰기</button>
-      <button class="tbtn" id="tourClose" style="flex:1; justify-content:center;">닫기</button>
+
+    <div id="tourBattle" style="display:none;">
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;" id="tourProgress">그룹 준비 중...</p>
+      <div style="display:flex; gap:16px; margin-bottom:16px;">
+        <div style="flex:1; display:flex; flex-direction:column;">
+          <img id="tourImgA" src="" style="width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#F3F4F6;">
+          <button class="tbtn primary" id="tourPickA" style="width:100%; margin-top:8px; justify-content:center;">◀ 이 사진이 더 좋아요</button>
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column;">
+          <img id="tourImgB" src="" style="width:100%; max-height:360px; object-fit:contain; border-radius:12px; background:#F3F4F6;">
+          <button class="tbtn primary" id="tourPickB" style="width:100%; margin-top:8px; justify-content:center;">이 사진이 더 좋아요 ▶</button>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="tbtn" id="tourSkipGroup" style="flex:1; justify-content:center;">이 그룹 건너뛰기</button>
+        <button class="tbtn" id="tourClose" style="flex:1; justify-content:center;">닫기</button>
+      </div>
     </div>
   </div>
 </div>
@@ -913,10 +934,18 @@ async function openFolderPicker() {
 // 로드 시점에 작게 축소한 썸네일만 만들어서 들고 있고 원본(file)은 라이트박스에서 열 때만 씁니다.
 async function makeThumbBlob(file, maxDim, quality) {
   try {
-    const bitmap = await createImageBitmap(file, { resizeWidth: maxDim, resizeHeight: maxDim, resizeQuality: 'medium' });
+    // resizeWidth와 resizeHeight를 동시에 같은 값으로 주면 정사각형으로 늘리거나 찌그러뜨려버려서
+    // 원본 비율이 깨진다 — 긴 변 기준으로 비율을 유지한 채 축소한다(서버 레거시 모드의 sharp
+    // fit:'inside'와 동일한 방식). 원본보다 확대는 하지 않음(withoutEnlargement와 동일).
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement('canvas');
-    canvas.width = bitmap.width; canvas.height = bitmap.height;
-    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingQuality = 'medium';
+    ctx.drawImage(bitmap, 0, 0, w, h);
     bitmap.close();
     return await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
   } catch (_) {
@@ -1059,18 +1088,25 @@ async function runSmartAnalysisAsync() {
       ctx.drawImage(bitmap, 0, 0, 8, 8);
       const imgData = ctx.getImageData(0, 0, 8, 8).data;
 
-      let hashStr = '';
-      for (let y = 0; y < 8; y++) {
-        for (let x = 0; x < 7; x++) {
-          const i1 = (y * 8 + x) * 4;
-          const i2 = (y * 8 + x + 1) * 4;
-          const b1 = (imgData[i1] + imgData[i1+1] + imgData[i1+2]) / 3;
-          const b2 = (imgData[i2] + imgData[i2+1] + imgData[i2+2]) / 3;
-          hashStr += b1 > b2 ? '1' : '0';
-        }
+      const gray = new Array(64);
+      let sumR = 0, sumG = 0, sumB = 0;
+      for (let idx = 0; idx < 64; idx++) {
+        const o = idx * 4;
+        gray[idx] = (imgData[o] + imgData[o + 1] + imgData[o + 2]) / 3;
+        sumR += imgData[o]; sumG += imgData[o + 1]; sumB += imgData[o + 2];
       }
 
-      state.hashesCache.push({ id: p.id, hash: hashStr, folder: p.folder });
+      // 가로 그라디언트만 보던 걸 세로 그라디언트까지 더해 112비트로 — 구도/윤곽 판별력이 커져서
+      // 서로 다른 장면인데 우연히 비슷하게 잡히는 오탐이 줄어든다.
+      let hashStr = '';
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 7; x++) hashStr += gray[y * 8 + x] > gray[y * 8 + x + 1] ? '1' : '0';
+      }
+      for (let x = 0; x < 8; x++) {
+        for (let y = 0; y < 7; y++) hashStr += gray[y * 8 + x] > gray[(y + 1) * 8 + x] ? '1' : '0';
+      }
+
+      state.hashesCache.push({ id: p.id, hash: hashStr, folder: p.folder, avgColor: [sumR / 64, sumG / 64, sumB / 64] });
 
       if (await detectEyesClosed(bitmap)) {
         state.eyeClosedSet.add(p.id);
@@ -1085,42 +1121,56 @@ async function runSmartAnalysisAsync() {
   recalculateSimilarity();
 }
 
-// 🎯 슬라이더 연동 0.1초 황금 밸런스 유사 컷 계산기
+// 🎯 슬라이더 연동 유사 컷 계산기 — 구도 해시(가로+세로 그라디언트) + 평균 색상, 둘 다 가까워야
+// "유사 컷"으로 인정한다. 예전엔 가로 그라디언트 56비트만 보고 임계값도 널널해서(최대 36%까지 허용)
+// 서로 다른 장면끼리도 묶이는 경우가 많았음 — 해상도를 2배로 늘리고 기준도 훨씬 빡빡하게 조였다.
 function recalculateSimilarity() {
   state.similarGroups.clear();
   const hashes = state.hashesCache;
   if (!hashes || hashes.length === 0) return;
 
-  // 감도 레벨(1~5단계)에 따른 황금 오차 임계값 지정
-  // 1단계(매우 엄격): diff 10 / 14
-  // 3단계(황금 밸런스): diff 14 / 20
-  // 5단계(유연): diff 20 / 28
-  const baseThresholds = [0, 10, 12, 15, 18, 22];
-  const seqThresholds = [0, 14, 16, 20, 24, 28];
-  
-  const baseTh = baseThresholds[state.sensLevel] || 15;
-  const seqTh = seqThresholds[state.sensLevel] || 20;
+  const baseThresholds = [0, 9, 12, 16, 20, 27];
+  const seqThresholds = [0, 13, 18, 22, 28, 36];
+  const colorThresholds = [0, 30, 45, 60, 80, 100];
+
+  const baseTh = baseThresholds[state.sensLevel] || 16;
+  const seqTh = seqThresholds[state.sensLevel] || 22;
+  const colorTh = colorThresholds[state.sensLevel] || 60;
 
   let groupIdx = 1;
   for (let i = 0; i < hashes.length; i++) {
     for (let j = i + 1; j < hashes.length; j++) {
-      let isNearSeq = (j - i <= 4) && (hashes[i].folder === hashes[j].folder);
-      
-      let diff = 0;
-      for (let k = 0; k < hashes[i].hash.length; k++) {
-        if (hashes[i].hash[k] !== hashes[j].hash[k]) diff++;
-      }
+      const isNearSeq = (j - i <= 4) && (hashes[i].folder === hashes[j].folder);
 
-      if (diff <= (isNearSeq ? seqTh : baseTh)) {
-        const curGroup = state.similarGroups.get(hashes[i].id) || `그룹 ${groupIdx}`;
-        state.similarGroups.set(hashes[i].id, curGroup);
-        state.similarGroups.set(hashes[j].id, curGroup);
-      }
+      let diff = 0;
+      const hi = hashes[i].hash, hj = hashes[j].hash;
+      for (let k = 0; k < hi.length; k++) if (hi[k] !== hj[k]) diff++;
+      if (diff > (isNearSeq ? seqTh : baseTh)) continue;
+
+      const ci = hashes[i].avgColor, cj = hashes[j].avgColor;
+      const colorDiff = Math.abs(ci[0] - cj[0]) + Math.abs(ci[1] - cj[1]) + Math.abs(ci[2] - cj[2]);
+      if (colorDiff > colorTh) continue;
+
+      const curGroup = state.similarGroups.get(hashes[i].id) || `그룹 ${groupIdx}`;
+      state.similarGroups.set(hashes[i].id, curGroup);
+      state.similarGroups.set(hashes[j].id, curGroup);
     }
     if (state.similarGroups.has(hashes[i].id)) groupIdx++;
   }
 
   renderGrid();
+}
+
+// 별점/보정요청을 라이트박스를 열지 않아도 썸네일 아래에서 바로 볼 수 있게
+function cellMetaHtml(id) {
+  const r = state.ratings[id] || {};
+  const notes = state.notes[id] || [];
+  const parts = [];
+  if (r.groom) parts.push(`<span style="color:var(--groom)">💙${r.groom}★</span>`);
+  if (r.bride) parts.push(`<span style="color:var(--bride)">🩷${r.bride}★</span>`);
+  if (notes.length) parts.push(`<span style="color:var(--brand-primary)">📝${notes.length}건</span>`);
+  if (!parts.length) return '';
+  return `<div class="meta-tag">${parts.join(' ')}</div>`;
 }
 
 function renderGrid() {
@@ -1166,6 +1216,7 @@ function renderGrid() {
       <div class="cell-info-bar">
         <div class="name">${esc(p.name)}</div>
         ${p.folder ? `<div class="folder-tag">📂 ${esc(p.folder)}</div>` : ''}
+        ${cellMetaHtml(p.id)}
       </div>
     `;
 
@@ -1519,23 +1570,37 @@ $('#finalConfirmBtn').onclick = runFinalConfirm;
 // ---------- 1:1 비교 토너먼트 (유사 컷끼리 맞대결시켜 베스트 컷 가려내기) ----------
 const tour = { groups: [], idx: 0, queue: [], pair: null };
 
-function buildSimilarGroupLists() {
+// scope: 'similar'는 스마트 분석으로 잡힌 유사 컷 그룹 전체, 'common'은 그중에서도
+// 신랑·신부가 둘 다 고른(중복 선택) 사진들끼리만 — 서로 안 비슷한 사진끼리 억지로 붙이지 않도록
+// 어느 쪽이든 항상 "유사 컷으로 감지된 것"을 전제로 그룹을 만든다.
+function buildSimilarGroupLists(scope) {
   const map = new Map();
   for (const [id, label] of state.similarGroups.entries()) {
+    if (scope === 'common' && !(state.sel.groom.has(id) && state.sel.bride.has(id))) continue;
     if (!map.has(label)) map.set(label, []);
     map.get(label).push(id);
   }
   return Array.from(map.values()).filter(arr => arr.length >= 2);
 }
 
+function openTournamentModal() {
+  $('#tourSetup').style.display = 'block';
+  $('#tourBattle').style.display = 'none';
+  $('#tournamentModal').classList.add('open');
+}
+
 function startTournament() {
-  tour.groups = buildSimilarGroupLists();
+  const scope = document.querySelector('input[name="tourScope"]:checked')?.value || 'similar';
+  tour.groups = buildSimilarGroupLists(scope);
   if (tour.groups.length === 0) {
-    alert('비교할 유사 컷 그룹이 없어요. 먼저 "✨ 스마트 분석"을 실행해 유사 컷을 찾아주세요.');
+    alert(scope === 'common'
+      ? '중복 선택된 사진 중 유사 컷 그룹이 없어요. 먼저 "✨ 스마트 분석"을 실행하고, 신랑·신부가 겹쳐서 고른 사진이 있는지 확인해 주세요.'
+      : '비교할 유사 컷 그룹이 없어요. 먼저 "✨ 스마트 분석"을 실행해 유사 컷을 찾아주세요.');
     return;
   }
   tour.idx = 0;
-  $('#tournamentModal').classList.add('open');
+  $('#tourSetup').style.display = 'none';
+  $('#tourBattle').style.display = 'block';
   loadTourGroup();
 }
 
@@ -1588,7 +1653,9 @@ function forceSelect(id, val) {
   }).catch(_ => {});
 }
 
-$('#btnTournament').onclick = startTournament;
+$('#btnTournament').onclick = openTournamentModal;
+$('#tourSetupCancel').onclick = () => $('#tournamentModal').classList.remove('open');
+$('#tourSetupStart').onclick = startTournament;
 $('#tourPickA').onclick = () => pickTourWinner('a');
 $('#tourPickB').onclick = () => pickTourWinner('b');
 $('#tourSkipGroup').onclick = () => { tour.idx++; loadTourGroup(); };
