@@ -739,7 +739,16 @@
 </footer>
 
 <script>
-const sb = supabase.createClient('__SUPABASE_URL__', '__SUPABASE_ANON_KEY__');
+let sb = null;
+try {
+  const sbUrl = '__SUPABASE_URL__';
+  const sbKey = '__SUPABASE_ANON_KEY__';
+  if (sbUrl && sbKey && !sbUrl.startsWith('__')) {
+    sb = supabase.createClient(sbUrl, sbKey);
+  }
+} catch (err) {
+  console.error('Supabase init error:', err);
+}
 
 let currentUser = null; // Supabase 세션에서 파생됨 (userFromSession 참고)
 let selectedGender = 'male';
@@ -822,7 +831,7 @@ function escHtml(s) {
 async function refreshMyProjects() {
   const listEl = document.getElementById('myProjectsList');
   if (!listEl) return;
-  if (!currentUser) { listEl.innerHTML = ''; return; }
+  if (!currentUser || !sb) { listEl.innerHTML = ''; return; }
 
   const { data: projects, error } = await sb.from('projects')
     .select('id, title, folder_name, room_code, created_at')
@@ -854,6 +863,7 @@ function openProject(id) {
 
 async function createProject() {
   if (!currentUser) { openAuthModal('login'); return; }
+  if (!sb) { alert('Supabase 연동 키가 설정되지 않았습니다.'); return; }
   const nameInput = document.getElementById('newProjectName');
   const title = nameInput.value.trim();
   if (!title) { alert('프로젝트 이름을 입력해 주세요.'); return; }
@@ -869,19 +879,25 @@ async function createProject() {
   location.href = '/app?mode=host&project=' + encodeURIComponent(data.id);
 }
 
-sb.auth.onAuthStateChange((event, session) => {
-  currentUser = userFromSession(session);
-  checkAuthStatus();
-  if (event === 'PASSWORD_RECOVERY') {
-    openChangePasswordModal();
-  }
-});
+if (sb) {
+  sb.auth.onAuthStateChange((event, session) => {
+    currentUser = userFromSession(session);
+    checkAuthStatus();
+    if (event === 'PASSWORD_RECOVERY') {
+      openChangePasswordModal();
+    }
+  });
 
-(async () => {
-  const { data: { session } } = await sb.auth.getSession();
-  currentUser = userFromSession(session);
-  checkAuthStatus();
-})();
+  (async () => {
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      currentUser = userFromSession(session);
+      checkAuthStatus();
+    } catch (e) {
+      console.error('Session get error:', e);
+    }
+  })();
+}
 
 // 카카오/네이버 로그인은 서버가 OAuth 교환을 마친 뒤 매직링크 토큰과 함께 돌아옵니다.
 const urlParams = new URLSearchParams(window.location.search);
@@ -1018,34 +1034,60 @@ function setExtraGender(g) {
 
 async function handleLoginSubmit(e) {
   e.preventDefault();
+  if (!sb) {
+    alert('Supabase 연동 정보가 설정되지 않았습니다. Vercel 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)를 확인해 주세요.');
+    return;
+  }
   const email = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const origText = submitBtn ? submitBtn.textContent : '';
 
-  const { error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) { alert('이메일 또는 비밀번호가 올바르지 않습니다.'); return; }
-  closeAuthModal();
+  try {
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '로그인 중...'; }
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { alert('로그인 실패: ' + (error.message || '이메일 또는 비밀번호가 올바르지 않습니다.')); return; }
+    closeAuthModal();
+  } catch (err) {
+    alert('로그인 시도 중 오류가 발생했습니다: ' + (err.message || err));
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText; }
+  }
 }
 
 async function handleSignupSubmit(e) {
   e.preventDefault();
+  if (!sb) {
+    alert('Supabase 연동 정보가 설정되지 않았습니다. Vercel 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)를 확인해 주세요.');
+    return;
+  }
   const email = document.getElementById('signupEmail').value.trim();
   const password = document.getElementById('signupPassword').value;
   const name = document.getElementById('signupName').value.trim();
   const birthYear = parseInt(document.getElementById('signupBirthYear').value, 10);
   const birthday = document.getElementById('signupBirthday').value.trim();
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const origText = submitBtn ? submitBtn.textContent : '';
 
-  const { data, error } = await sb.auth.signUp({
-    email, password,
-    options: { data: { name, gender: selectedGender, birth_year: birthYear, birthday, provider: 'email' } }
-  });
-  if (error) { alert(error.message || '회원가입 중 오류가 발생했습니다.'); return; }
+  try {
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '가입 처리 중...'; }
+    const { data, error } = await sb.auth.signUp({
+      email, password,
+      options: { data: { name, gender: selectedGender, birth_year: birthYear, birthday, provider: 'email' } }
+    });
+    if (error) { alert(error.message || '회원가입 중 오류가 발생했습니다.'); return; }
 
-  if (data.session) {
-    alert('회원가입이 완료되었습니다!');
-    closeAuthModal();
-  } else {
-    alert('가입 확인 메일을 보내드렸습니다. 메일함을 확인해 이메일 인증을 완료해 주세요.');
-    closeAuthModal();
+    if (data.session) {
+      alert('회원가입이 완료되었습니다!');
+      closeAuthModal();
+    } else {
+      alert('가입 확인 메일을 보내드렸습니다. 메일함을 확인해 이메일 인증을 완료해 주세요.');
+      closeAuthModal();
+    }
+  } catch (err) {
+    alert('회원가입 중 오류가 발생했습니다: ' + (err.message || err));
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText; }
   }
 }
 
@@ -1116,10 +1158,13 @@ async function handleSocialExtraSubmit(e) {
 
 function handleSocialAuth(provider) {
   if (provider === 'google') {
-    // 구글은 Supabase Auth 기본 프로바이더라 서버를 거치지 않고 바로 연결됩니다.
-    sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } });
+    if (!sb) {
+      alert('Supabase 연동 정보가 설정되지 않았습니다. Vercel 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY)를 확인해 주세요.');
+      return;
+    }
+    sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } })
+      .catch(err => alert('구글 로그인 오류: ' + (err.message || err)));
   } else {
-    // 카카오(이메일 동의항목에 비즈 인증 필요)와 네이버는 서버 경유 OAuth 교환이 필요합니다.
     window.location.href = `/api/auth/${provider}`;
   }
 }
