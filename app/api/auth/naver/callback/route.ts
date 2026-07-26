@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/serverClient';
+import { getSiteUrl } from '@/lib/siteUrl';
 
 // 네이버 로그인 콜백 (wedding-photo-select/server.js:592-733 포팅, 로직 동일)
 export async function GET(req: NextRequest) {
-  const baseUrl = req.nextUrl.origin;
+  const baseUrl = getSiteUrl(req.nextUrl.origin);
   const code = req.nextUrl.searchParams.get('code');
   const provider = 'naver';
 

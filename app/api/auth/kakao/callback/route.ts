@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/serverClient';
+import { getSiteUrl } from '@/lib/siteUrl';
 
 // 카카오 로그인 콜백 — Supabase Auth의 Kakao 프로바이더는 이메일 동의항목(account_email)을 요구하는데,
 // 비즈니스 인증이 안 된 카카오 앱은 그 동의항목 자체를 설정할 수 없어 KOE205로 막힌다. 그래서 자체
 // OAuth 교환 후 Supabase 유저로 연동(federate)한다. (wedding-photo-select/server.js:592-733 포팅, 로직 동일)
 export async function GET(req: NextRequest) {
-  const baseUrl = req.nextUrl.origin;
+  const baseUrl = getSiteUrl(req.nextUrl.origin);
   const code = req.nextUrl.searchParams.get('code');
   const provider = 'kakao';
 
