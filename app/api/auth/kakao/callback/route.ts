@@ -15,6 +15,10 @@ export async function GET(req: NextRequest) {
   let userName: string | null = null;
   let userEmail: string | null = null;
   let needEmail = true;
+  let failReason = '';
+
+  if (!code) failReason = 'no_code';
+  else if (!process.env.KAKAO_CLIENT_ID) failReason = 'no_client_id';
 
   try {
     if (code && process.env.KAKAO_CLIENT_ID) {
@@ -49,15 +53,19 @@ export async function GET(req: NextRequest) {
         } else {
           userEmail = `kakao_${profileData.id || Date.now()}@picselec.com`;
         }
+      } else {
+        failReason = 'token_exchange_failed';
+        console.error('카카오 토큰 교환 실패:', JSON.stringify(tokenData));
       }
     }
   } catch (err: any) {
+    failReason = 'profile_fetch_threw';
     console.error('카카오 OAuth profile fetch error:', err.message);
   }
 
   if (!userEmail) {
-    console.error('kakao OAuth: 토큰 교환 또는 프로필 조회 실패로 사용자를 특정할 수 없음');
-    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}`);
+    console.error('kakao OAuth: 토큰 교환 또는 프로필 조회 실패로 사용자를 특정할 수 없음, reason=', failReason);
+    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}&reason=${failReason || 'unknown'}`);
   }
   if (!userName) userName = '카카오 회원';
 
@@ -83,7 +91,7 @@ export async function GET(req: NextRequest) {
 
   if (linkErr || !linkData?.properties?.hashed_token) {
     console.error('Supabase generateLink error:', linkErr?.message);
-    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}`);
+    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}&reason=generate_link_failed`);
   }
 
   // 이미 가입된 유저인 경우에도 metadata name을 최신 카카오 프로필 닉네임으로 최신화

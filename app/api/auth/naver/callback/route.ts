@@ -13,6 +13,10 @@ export async function GET(req: NextRequest) {
   let userBirthYear: string | null = null;
   let userBirthday: string | null = null;
   let needEmail = true;
+  let failReason = '';
+
+  if (!code) failReason = 'no_code';
+  else if (!process.env.NAVER_CLIENT_ID) failReason = 'no_client_id';
 
   try {
     if (code && process.env.NAVER_CLIENT_ID) {
@@ -42,15 +46,19 @@ export async function GET(req: NextRequest) {
         if (nResp.gender) userGender = nResp.gender === 'F' || nResp.gender === 'female' ? 'female' : 'male';
         if (nResp.birthyear) userBirthYear = nResp.birthyear;
         if (nResp.birthday) userBirthday = nResp.birthday;
+      } else {
+        failReason = 'token_exchange_failed';
+        console.error('네이버 토큰 교환 실패:', JSON.stringify(tokenData));
       }
     }
   } catch (err: any) {
+    failReason = 'profile_fetch_threw';
     console.error('네이버 OAuth profile fetch error:', err.message);
   }
 
   if (!userEmail) {
-    console.error('naver OAuth: 토큰 교환 또는 프로필 조회 실패로 사용자를 특정할 수 없음');
-    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}`);
+    console.error('naver OAuth: 토큰 교환 또는 프로필 조회 실패로 사용자를 특정할 수 없음, reason=', failReason);
+    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}&reason=${failReason || 'unknown'}`);
   }
   if (!userName) userName = '네이버 회원';
 
@@ -76,7 +84,7 @@ export async function GET(req: NextRequest) {
 
   if (linkErr || !linkData?.properties?.hashed_token) {
     console.error('Supabase generateLink error:', linkErr?.message);
-    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}`);
+    return NextResponse.redirect(`${baseUrl}/?social_auth=error&provider=${provider}&reason=generate_link_failed`);
   }
 
   if (linkData?.user?.id) {

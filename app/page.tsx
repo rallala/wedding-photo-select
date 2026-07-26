@@ -51,6 +51,7 @@ function LandingPageInner() {
     const tokenHash = searchParams.get('token_hash');
     const provider = searchParams.get('provider') || '';
     const socialAuth = searchParams.get('social_auth');
+    const reason = searchParams.get('reason');
     const join = searchParams.get('join');
 
     if (socialVerify === '1' && tokenHash) {
@@ -65,7 +66,7 @@ function LandingPageInner() {
       router.replace('/');
     }
     if (socialAuth === 'error') {
-      alert('소셜 로그인 처리 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      alert(`소셜 로그인 처리 중 오류가 발생했습니다. 다시 시도해 주세요.\n(진단 코드: ${reason || 'unknown'})`);
       router.replace('/');
     }
     if (join) {
