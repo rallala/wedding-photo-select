@@ -60,6 +60,27 @@ export function buildFilenameList(ids: string[], byId: Map<string, Photo>): stri
   return ids.map((id) => byId.get(id)?.name).filter(Boolean).join(', ');
 }
 
+// 신규: 붙여넣은 파일명 목록(콤마/줄바꿈 구분)을 현재 로드된 사진과 매칭해 id를 찾는다.
+// 다른 곳에서 내보낸 파일명 목록을 다시 가져와 선택 현황에 반영할 때 사용.
+export function parseFilenameList(text: string, byId: Map<string, Photo>): { matchedIds: string[]; unmatchedNames: string[] } {
+  const names = text
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const nameToId = new Map<string, string>();
+  byId.forEach((p, id) => nameToId.set(p.name, id));
+
+  const matchedIds: string[] = [];
+  const unmatchedNames: string[] = [];
+  names.forEach((name) => {
+    const id = nameToId.get(name);
+    if (id) matchedIds.push(id);
+    else unmatchedNames.push(name);
+  });
+  return { matchedIds, unmatchedNames };
+}
+
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);

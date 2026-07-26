@@ -108,6 +108,7 @@ function RoomPageInner() {
         requestOriginalsFromHost={controller.requestOriginalsFromHost}
         pushOriginalsToAllGuests={controller.pushOriginalsToAllGuests}
         receivedOriginals={controller.receivedOriginals}
+        persistState={controller.persistState}
       />
       <Lightbox persistState={controller.persistState} />
     </div>

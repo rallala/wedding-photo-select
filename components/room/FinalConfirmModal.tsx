@@ -8,6 +8,7 @@ import {
   buildCorrectionCSV,
   downloadTextFile,
   buildFilenameList,
+  parseFilenameList,
   copyTextToClipboard,
   copySelectedFilesToFolder,
   downloadBlob,
@@ -15,7 +16,7 @@ import {
 } from '@/lib/exportUtils';
 
 // 최종 확정 & 보정요청서 + 최종 셀렉본 원본 P2P 핸드오프
-// (wedding-photo-select/index.html:1782-1919 runFinalConfirm 포팅 + 신규 원본 핸드오프/파일명 내보내기)
+// (wedding-photo-select/index.html:1782-1919 runFinalConfirm 포팅 + 신규 원본 핸드오프/파일명 가져오기·내보내기)
 export default function FinalConfirmModal({
   open,
   onClose,
@@ -23,6 +24,7 @@ export default function FinalConfirmModal({
   requestOriginalsFromHost,
   pushOriginalsToAllGuests,
   receivedOriginals,
+  persistState,
 }: {
   open: boolean;
   onClose: () => void;
@@ -30,10 +32,13 @@ export default function FinalConfirmModal({
   requestOriginalsFromHost: (ids: string[]) => void;
   pushOriginalsToAllGuests: (ids: string[]) => void;
   receivedOriginals: ReceivedOriginal[];
+  persistState: () => void;
 }) {
-  const { users, sel, byId, ratings, notes, dirHandle } = useAppStore();
+  const { users, sel, byId, ratings, notes, dirHandle, who, forceSelect } = useAppStore();
   const [scope, setScope] = useState<FinalScope>('union');
   const [handoffStatus, setHandoffStatus] = useState<string>('');
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
   const processedCountRef = useRef(0);
 
   const allIds = Array.from(byId.keys());
@@ -85,6 +90,21 @@ export default function FinalConfirmModal({
     downloadTextFile(`파일명목록_${new Date().toISOString().slice(0, 10)}.txt`, buildFilenameList(ids, byId), 'text/plain;charset=utf-8');
   }
 
+  // 다른 곳에서 내보낸 파일명 목록을 붙여넣어 내 선택 현황에 반영(기존 선택은 지우지 않고 합침)
+  function handleImportFilenames() {
+    const { matchedIds, unmatchedNames } = parseFilenameList(importText, byId);
+    matchedIds.forEach((id) => forceSelect(id, true));
+    if (matchedIds.length > 0) persistState();
+
+    setImportText('');
+    setImportOpen(false);
+    alert(
+      unmatchedNames.length === 0
+        ? `✅ ${matchedIds.length}장을 내 선택에 추가했습니다.`
+        : `✅ ${matchedIds.length}장을 내 선택에 추가했습니다.\n⚠️ ${unmatchedNames.length}개는 지금 로드된 사진 중에서 찾지 못해 건너뛰었습니다.`,
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm">
       <div className="w-full max-w-[480px] rounded-[20px] border border-border bg-panel p-8 text-left shadow-2xl">
@@ -101,13 +121,49 @@ export default function FinalConfirmModal({
 
         <div className="mb-4 rounded-md border border-border bg-gray-50 px-3.5 py-2.5 text-[13px]">{ids.length}장이 확정 예정입니다.</div>
 
-        <div className="mb-5 flex gap-2">
+        <div className="mb-3 flex gap-2">
           <button onClick={handleCopyFilenames} className="tbtn flex-1 justify-center text-xs">
             📋 파일명 복사
           </button>
           <button onClick={handleDownloadFilenameTxt} className="tbtn flex-1 justify-center text-xs">
             📄 파일명 txt (라이트룸용)
           </button>
+        </div>
+
+        <div className="mb-5">
+          {!importOpen ? (
+            <button onClick={() => setImportOpen(true)} className="tbtn w-full justify-center text-xs">
+              📥 파일명으로 선택 가져오기 ({userNameLabel(who, users)})
+            </button>
+          ) : (
+            <div className="rounded-md border border-border bg-gray-50 p-3">
+              <p className="mb-2 text-[11px] text-text-muted">
+                다른 곳에서 내보낸 파일명 목록(콤마 또는 줄바꿈 구분)을 붙여넣으면, 지금 로드된 사진 중 일치하는 것들을 &quot;{userNameLabel(who, users)}&quot;
+                선택에 추가합니다(기존 선택은 유지됩니다).
+              </p>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="IMG_0012.JPG, IMG_0045.JPG, ..."
+                rows={4}
+                className="input mb-2 resize-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setImportOpen(false);
+                    setImportText('');
+                  }}
+                  className="tbtn flex-1 justify-center text-xs"
+                >
+                  취소
+                </button>
+                <button onClick={handleImportFilenames} className="tbtn primary flex-1 justify-center text-xs">
+                  가져오기
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {handoffStatus && <div className="mb-3 text-center text-xs text-brand-primary">{handoffStatus}</div>}
@@ -132,4 +188,8 @@ function ScopeRadio({ value, current, onChange, label }: { value: FinalScope; cu
       {label}
     </label>
   );
+}
+
+function userNameLabel(who: string, users: { id: string; name: string }[]): string {
+  return users.find((u) => u.id === who)?.name || who;
 }
