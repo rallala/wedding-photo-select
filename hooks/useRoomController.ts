@@ -224,6 +224,18 @@ export function useRoomController() {
     const { data: project } = await sb.from('projects').select('title').eq('id', projectIdParam).single();
     if (project) setProjectTitle(project.title);
 
+    // 게스트가 랜딩의 "참여 코드로 입장하기"를 거치지 않고(예: 공유받은 /room 링크로 바로 진입)
+    // 들어온 경우에도 project_members에 반드시 들어가 있어야 project_state/Storage RLS를 통과한다.
+    const {
+      data: { user: authUser },
+    } = await sb.auth.getUser();
+    if (authUser) {
+      const { error: memberErr } = await sb
+        .from('project_members')
+        .upsert({ project_id: projectIdParam, user_id: authUser.id, role: 'guest' }, { onConflict: 'project_id,user_id', ignoreDuplicates: true });
+      if (memberErr) console.error('project_members 등록 실패:', memberErr.message);
+    }
+
     await loadOrInitProjectState(projectIdParam);
 
     const { data: stateRow } = await sb.from('project_state').select('photos').eq('project_id', projectIdParam).maybeSingle();
