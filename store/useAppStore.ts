@@ -87,13 +87,16 @@ interface AppState {
   setDirHandle: (h: FileSystemDirectoryHandle | null) => void;
   setRoom: (patch: Partial<Pick<AppState, 'roomMode' | 'projectId' | 'roomCode' | 'connectedGuests'>>) => void;
 
-  // project_state 행이 realtime으로 갱신될 때 통째로 반영(applyProjectStateRow 포팅)
+  // project_state 행이 realtime으로 갱신될 때 반영(선택/노트/별점/유저만 — 사진 매니페스트는 제외).
+  // photos는 일부러 안 건드린다: Postgres는 UPDATE 때마다 photos 컬럼값을 그대로 다시 실어 보내는데,
+  // 그 원시 매니페스트에는 url(blob URL)이 없어서 여기서 그대로 store에 얹으면 이미 내려받아 잘 보이던
+  // 게스트 사진이 다른 사람이 하트만 눌러도 전부 사라져버린다 — 매니페스트 반영은
+  // useRoomController의 별도 증분 다운로드 로직(applyPhotoManifestUpdate)이 전담한다.
   applyProjectStateRow: (row: {
     users?: Profile[];
     selections?: Record<string, string[]>;
     notes?: Record<string, Note[]>;
     ratings?: Record<string, Record<string, number>>;
-    photos?: Photo[];
   }) => void;
 }
 
@@ -241,6 +244,5 @@ export const useAppStore = create<AppState>((set, get) => ({
       sel[u.id] = new Set(row.selections?.[u.id] || []);
     });
     set({ sel, notes: row.notes || {}, ratings: row.ratings || {} });
-    if (row.photos) get().setPhotos(row.photos);
   },
 }));

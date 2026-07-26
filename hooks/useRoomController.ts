@@ -45,15 +45,36 @@ export function useRoomController() {
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const clientIdRef = useRef(Math.random().toString(36).slice(2, 10));
+  const lastManifestSigRef = useRef<string>('');
 
   const applyRow = useAppStore((s) => s.applyProjectStateRow);
+
+  // 게스트 전용: project_state.photos가 realtime으로 갱신될 때마다 통째로 store에 얹으면(원시
+  // 매니페스트엔 blob url이 없음) 이미 잘 내려받아 보이던 사진이 다른 사람 하트 클릭 한 번에도
+  // 전부 사라진다 — IndexedDB 캐시 덕에 재다운로드는 사실상 공짜이므로, 매니페스트가 실제로
+  // 바뀐 경우에만 다시 받아서 유효한 url로 다시 채워 넣는다.
+  const applyPhotoManifestUpdate = useCallback(
+    async (manifest: any[]) => {
+      if (!sb || !projectIdParam) return;
+      const sig = manifest.map((m) => `${m.path}:${m.size}:${m.mtime}`).join('|');
+      if (sig === lastManifestSigRef.current) return;
+      lastManifestSigRef.current = sig;
+      const photos = await downloadPhotosFromManifest(sb, projectIdParam, manifest as any);
+      store.setPhotos(photos);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sb, projectIdParam],
+  );
 
   // ---------- 초기 연결(공통): 프로젝트 상태 로드 + Realtime 구독 ----------
   const setupChannel = useCallback(
     (projectId: string) => {
       if (!sb) return;
       const channel = createRoomChannel(sb, projectId, clientIdRef.current, {
-        onStateUpdate: (row) => applyRow(row),
+        onStateUpdate: (row) => {
+          applyRow(row);
+          if (mode === 'guest' && Array.isArray((row as any).photos)) applyPhotoManifestUpdate((row as any).photos);
+        },
         onSignal: (payload: SignalPayload) => {
           if (mode === 'guest' && payload.kind === 'offer') {
             guestHandleIncomingOffer(
@@ -82,7 +103,7 @@ export function useRoomController() {
       channelRef.current = channel;
       subscribeAndTrackPresence(channel);
     },
-    [sb, mode, applyRow, store],
+    [sb, mode, applyRow, store, applyPhotoManifestUpdate],
   );
 
   async function loadOrInitProjectState(projectId: string) {
@@ -240,6 +261,7 @@ export function useRoomController() {
 
     const { data: stateRow } = await sb.from('project_state').select('photos').eq('project_id', projectIdParam).maybeSingle();
     const manifest = (stateRow?.photos as any[]) || [];
+    lastManifestSigRef.current = manifest.map((m) => `${m.path}:${m.size}:${m.mtime}`).join('|');
 
     if (manifest.length === 0) {
       setProgress(HIDDEN_PROGRESS);
