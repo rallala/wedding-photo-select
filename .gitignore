@@ -1,11 +1,5 @@
-node_modules
-.DS_Store
-*.log
-.thumbs/
-dist_package/
-*.zip
-selections.json
-sessions.json
+node_modules/
+.next/
 .env
 .env.local
-.vercel
+next-env.d.ts

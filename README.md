@@ -1,101 +1,36 @@
-# PicSelec 사진 셀렉 📸
+# PicSelec
 
-여러 명이 각자 폰/노트북으로 **실시간 동시에** 사진을 고르고, 확정한 셀렉본을 새 폴더로 복사해 바로 전달하는 웹앱입니다. 여행·모임·행사·웨딩 등 여러 명이 함께 사진을 골라야 하는 어떤 상황에도 쓸 수 있습니다.
+여러 명이 링크 하나로 함께 사진을 실시간으로 셀렉하는 웹앱입니다. Next.js/React로 재작성된 버전이며, 기존 vanilla JS + Node 서버 버전을 대체합니다.
 
-- ⚡ **더블 클릭 실행** — 터미널 명령어 입력 필요 없이 파일만 누르면 브라우저 자동 오픈
-- 📱 **스마트폰 QR 코드 접속** — 화면 상단 [📱 폰 접속 / QR] 버튼으로 카메라만 대면 즉시 접속
-- 🌐 **외부 접속 지원** — 같은 와이파이가 아닌 외부(LTE/5G/다른 장소)에서도 참여자가 폰으로 접속 가능
-- 🐳 **Docker 지원** — Node.js 설치 없이 Docker로도 즉시 구동 가능 (`node:24-alpine`)
-- 🔒 **PIN 잠금** — 접속 시 4자리 PIN 필요(상대방에겐 PIN과 QR/주소만 알려주면 됨)
-- 📁 **폴더를 브라우저에서 선택** — 실행할 때 경로를 붙일 필요 없음
-- 하위폴더까지 전부 펼쳐서 모든 jpg를 한 화면에
-- 참여자마다 고유 색상 배지, **여러 명이 함께 고른 사진(중복)=금색 테두리**
-- 검색·폴더·뷰(중복만/참여자별) 필터
-- 호스트가 켜면 게스트도 원본 화질을 보고 다운로드할 수 있는 원본 제공 토글
-- 선택 내역 자동 저장(중간에 꺼져도 안 날아감)
-- 확인 후 원하는 것만 새 폴더로 복사
+## 아키텍처 요약
 
----
+- **브라우징용 썸네일**: 호스트 브라우저에서 Canvas로 축소(WebP, 100KB 목표) → Supabase Storage(`project-photos` 버킷)에 업로드 → 게스트가 다운로드. NAT/TURN 문제 없음.
+- **최종 확정된 원본**: 최종 확정 시점에만 WebRTC P2P(STUN-only, TURN 없음)로 그 순간 접속 중인 참여자에게 직접 전송. 실패해도 CSV/파일명 목록은 항상 받을 수 있음.
+- **실시간 현황판**(선택/별점/메모): Supabase Realtime(postgres_changes + Presence).
+- **인증**: Supabase Auth(이메일, 구글) + 카카오/네이버(자체 OAuth 코드 교환 후 Supabase에 연동).
 
-## 🚀 실행 방법
+## 실행
 
-### 0. 새 컴퓨터에서 처음 시작할 때
 ```bash
-git clone https://github.com/rallala/wedding-photo-select.git
-cd wedding-photo-select
 npm install
-cp .env.example .env   # 그다음 .env를 열어 Vercel 대시보드의 값들을 그대로 채워 넣기
+cp .env.example .env.local   # 값 채우기
+npm run dev
 ```
 
-### 1. 로컬 실행
-```bash
-npm start
-# 또는: node server.js
-```
-서버가 켜지면서 내 컴퓨터 웹 브라우저가 자동으로 열립니다. 다른 참여자의 폰은 웹 화면 상단의 **[📱 폰 접속 / QR]** 버튼을 눌러 나온 **Wi-Fi QR 코드**를 카메라로 스캔하세요.
+## Supabase 설정
 
-### 2. 외부 접속(LTE/5G/다른 장소) 포함 실행
-```bash
-npm run tunnel
-# 또는: TUNNEL=true node server.js
-```
-외부 접속용 HTTPS 주소가 자동으로 생성됩니다. 웹 화면 상단의 **[📱 폰 접속 / QR]** → **[외부 접속]** 탭에 나타난 QR 코드를 폰으로 찍거나 [주소 복사]를 눌러 전달해 주세요.
+1. Supabase 프로젝트 대시보드 → SQL Editor에서 `supabase/schema.sql`을 실행합니다(멱등하게 작성되어 다시 실행해도 안전).
+2. Storage에 `project-photos` 버킷이 생성되고 정책이 걸렸는지 확인합니다.
 
-### 3. Docker로 실행할 때
-```bash
-docker run --rm -it -p 3000:3000 -v "%cd%":/app -w /app node:24-alpine node server.js
-```
+| 환경변수 | 용도 |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 브라우저 클라이언트 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용(계정 삭제, 카카오/네이버 연동). 절대 클라이언트에 노출 금지 |
+| `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 네이버 로그인 |
+| `NEXT_PUBLIC_KAKAO_JS_KEY` | 룸 코드 "카카오톡으로 보내기" 버튼용(로그인과 무관, 없으면 클립보드 복사로 대체) |
 
----
+## 이번 재작성에서 빠진 것 (의도적)
 
-## 🔑 웹 배포(Vercel) 환경변수
-
-회원가입/로그인/셀렉룸은 Supabase가 있어야 동작합니다. `supabase/schema.sql`을 Supabase 대시보드 → SQL Editor에서 먼저 실행한 뒤, Vercel 프로젝트의 Environment Variables를 설정하세요.
-
-| 변수명 | 용도 | 어디서 구하나 |
-|---|---|---|
-| `SUPABASE_URL` | Supabase 프로젝트 URL | Supabase 대시보드 → Project Settings → API |
-| `SUPABASE_ANON_KEY` | 브라우저(landing.html/index.html)에 주입되는 공개 키 | 위와 동일 (anon/public key) |
-| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 관리자 키. **절대 클라이언트에 노출 금지** | 위와 동일 (service_role key) — 계정 삭제, 카카오/네이버 로그인 연동에 사용 |
-| `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 | 카카오 개발자 콘솔 |
-| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 네이버 로그인 | 네이버 개발자 센터 |
-| `KAKAO_JS_KEY` | 셀렉룸 접속 코드를 "카카오톡으로 보내기" 버튼용 (로그인과는 무관) | 카카오 개발자 콘솔 → 앱 키 → JavaScript 키 (REST API 키와 다름). 콘솔의 "플랫폼 → Web"에 배포 도메인을 등록해야 동작합니다. 설정 안 해도 클립보드 복사로 자동 대체됩니다. |
-
-구글 로그인은 Supabase Auth의 기본 제공 프로바이더라 Supabase 대시보드(Authentication → Sign In / Providers)에서 Client ID/Secret만 등록하면 됩니다(별도 서버 환경변수 불필요). 카카오는 Supabase Auth에도 있지만 이메일 동의항목(`account_email`)을 요구하는데, **비즈니스 인증이 안 된 카카오 앱은 이 동의항목 자체를 설정할 수 없어** Supabase 경유 로그인이 `KOE205` 에러로 막힙니다 — 그래서 카카오도 네이버처럼 위 `KAKAO_CLIENT_ID`/`KAKAO_CLIENT_SECRET`을 통한 자체 OAuth 연동을 씁니다. 이 경우 카카오/네이버가 이메일을 안 주면 임시 이메일로 가입되고, 로그인 후 뜨는 추가 정보 모달에서 실제 연락 이메일을 별도로 받아 `user_metadata.contact_email`에 저장합니다(로그인용 이메일 자체는 바꾸지 않음 — 바꾸면 확인 메일을 본인이 받을 수 없는 임시 주소로 보내게 되어버림).
-
-비밀번호 재설정 이메일이 실제로 발송되려면 Supabase 대시보드 → Authentication → Email Templates/SMTP 설정도 확인해 주세요(기본 제공 이메일은 발송량 제한이 있어 실서비스는 커스텀 SMTP 권장).
-
----
-
-## 💡 사용 흐름
-
-### 웹 배포(셀렉룸) — landing.html에서 시작
-1. 로그인/회원가입 (이메일 자체가입 또는 카카오·네이버·구글 간편가입)
-2. **새 프로젝트 만들기**(이름 입력) 또는 기존 프로젝트 목록에서 **열기** — 계정당 최대 5개까지 유지되고, 초과하면 가장 오래된 프로젝트가 자동 삭제됩니다
-3. 프로젝트를 열면 브라우저에서 내 PC 폴더를 선택합니다. 하나의 프로젝트는 하나의 폴더에 고정되어, 다음에 다시 열 때도 같은 폴더로만 열립니다(다른 폴더를 고르면 거부됩니다). 사진(썸네일)은 서버에 업로드되지 않고 브라우저 간 WebRTC로 직접 전송됩니다.
-4. 상단 **[📱 룸 코드]** 버튼으로 접속 코드를 카카오톡으로 바로 보내거나(카카오 JS 키 미설정 시 클립보드 복사) 코드를 직접 전달합니다.
-5. 상대방은 **"셀렉 룸 입장"**에 코드 입력 → 자동으로 사진 수신 후 함께 실시간 셀렉
-6. 선택/노트/별점은 Supabase에 저장되어 Realtime으로 양쪽에 즉시 반영되고, 한 번에 다 못 고르고 나갔다 다시 들어와도 이어집니다.
-7. 평소엔 용량이 작은 썸네일만 오가지만, 호스트가 상단 **[게스트에 원본 제공]** 토글을 켜면 게스트도 라이트박스에서 사진별로 원본 화질을 요청해서 보거나 다운로드할 수 있습니다(호스트가 P2P로 그 순간 전송하므로, 호스트가 접속 중이어야 받을 수 있습니다).
-
-### 로컬 실행(레거시) — node server.js로 직접 실행할 때
-1. 브라우저 접속 → **PIN 입력** (화면에 표시되는 4자리)
-2. **사진 폴더 선택** (사진이 들어있는 폴더 탐색 후 ‘이 폴더로 결정’ 클릭)
-3. 각자 자신의 **프로필**을 선택하고 하트로 사진을 클릭하면 실시간 반영
-4. 우측 상단 **‘최종 확정 & 복사’** → 목록 확인 → **복사 실행**
-   - 사진 폴더 옆에 `_최종셀렉_날짜` 폴더가 자동 생성되며, 이 폴더를 작가님께 보냅니다!
-
----
-
-## (선택) 썸네일 가속 — 2000장도 훨훨
-기본은 원본 이미지를 씁니다. 사진이 많거나 폰에서 느리면 한 줄만 설치:
-```bash
-npm install sharp
-```
-이후 다시 실행하면 썸네일 캐시가 켜져 훨씬 빨라집니다. (설치 안 돼도 정상 동작)
-
----
-
-## 팁
-- 선택 기록은 이 폴더의 `selections.json` 에 저장됩니다. 완전 초기화하려면 이 파일을 지우세요.
-- 처음 실행 시 방화벽 허용 창이 뜨면 **허용**을 눌러주세요.
+- 로컬 PIN 서버 모드(`node server.js` 더블클릭 실행)는 포팅하지 않았습니다. 필요하면 기존 `wedding-photo-select/server.js`를 계속 사용하세요.
+- 애드센스 실제 스크립트, `/privacy` `/terms`의 실제 법률 문구는 placeholder 상태입니다 — 게시 전에 반드시 채워 넣어야 합니다.
