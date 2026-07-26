@@ -24,14 +24,18 @@ export type SyncResult = { manifest: PhotoManifestEntry[]; failedNames: string[]
 // 업로드가 실패해도 매니페스트에 그대로 기록해버리면, 게스트는 존재하지 않는 파일을 내려받으려다
 // 전부 실패해서 그리드가 깨진 이미지 아이콘으로 가득 차게 된다 — 실패한 사진은 매니페스트에서
 // 아예 제외해서, 최소한 "업로드 성공한 사진만 게스트에게 보인다"가 되도록 한다.
+//
+// previousManifest를 주면 (폴더+파일명+용량+수정시각)이 그대로인 사진은 blob fetch/업로드 요청 자체를
+// 안 하고 바로 재사용한다 — 안 그러면 호스트가 프로젝트에 다시 들어올 때마다 안 바뀐 수백~수천 장을
+// 매번 다시 fetch+업로드 시도하는 것처럼 보여서(진행률이 처음부터 다시 도는 것처럼 보임) 느리고 헷갈린다.
 export async function syncPhotosToStorage(
   supabase: SupabaseClient,
   projectId: string,
   photos: Photo[],
   onProgress?: (p: UploadProgress) => void,
+  previousManifest: PhotoManifestEntry[] = [],
 ): Promise<SyncResult> {
-  const { data: existing } = await supabase.storage.from(STORAGE_BUCKET).list(projectId, { limit: 5000 });
-  const existingSizes = new Map<string, number>((existing || []).map((o) => [o.name, o.metadata?.size ?? -1]));
+  const prevByName = new Map<string, PhotoManifestEntry>(previousManifest.map((m) => [`${m.folder}::${m.name}`, m]));
 
   const manifest: (PhotoManifestEntry | null)[] = new Array(photos.length);
   let done = 0;
@@ -43,26 +47,31 @@ export async function syncPhotosToStorage(
     while (nextIdx < photos.length) {
       const i = nextIdx++;
       const p = photos[i];
+      const prev = prevByName.get(`${p.folder}::${p.name}`);
+
+      if (prev && prev.size === p.size && prev.mtime === p.mtime) {
+        // 이전에 이미 업로드 성공한 것과 완전히 동일한 파일 — 다시 fetch/업로드하지 않고 그대로 재사용
+        manifest[i] = prev;
+        done++;
+        onProgress?.({ done, total: photos.length, failed });
+        continue;
+      }
+
       const hash = await photoStorageKey(p.folder, p.name);
-      const objectName = `${hash}.webp`;
-      const path = `${projectId}/${objectName}`;
+      const path = `${projectId}/${hash}.webp`;
 
       const blob = await fetch(p.url).then((r) => r.blob());
-      const alreadyUploaded = existingSizes.get(objectName) === blob.size;
-      let ok = alreadyUploaded;
-      if (!alreadyUploaded) {
-        const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, {
-          upsert: true,
-          contentType: 'image/webp',
-        });
-        if (error) {
-          console.error(`썸네일 업로드 실패 (${p.name}):`, error.message);
-          failed++;
-        } else {
-          ok = true;
-        }
+      const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, {
+        upsert: true,
+        contentType: 'image/webp',
+      });
+      if (error) {
+        console.error(`썸네일 업로드 실패 (${p.name}):`, error.message);
+        failed++;
+        manifest[i] = null;
+      } else {
+        manifest[i] = { id: p.id, name: p.name, folder: p.folder, size: p.size, mtime: p.mtime, path };
       }
-      manifest[i] = ok ? { id: p.id, name: p.name, folder: p.folder, size: p.size, mtime: p.mtime, path } : null;
 
       done++;
       onProgress?.({ done, total: photos.length, failed });

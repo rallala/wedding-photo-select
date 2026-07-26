@@ -111,10 +111,19 @@ export function useRoomController() {
     const { data, error } = await sb.from('project_state').select('*').eq('project_id', projectId).maybeSingle();
     if (error) {
       console.error('프로젝트 상태 로드 실패:', error.message);
+      alert(`⚠️ 프로젝트 상태를 불러오지 못했습니다(권한 문제일 수 있어요): ${error.message}`);
       return;
     }
     if (data) applyRow(data as any);
-    else await sb.from('project_state').insert({ project_id: projectId, selections: {}, notes: {}, ratings: {}, users: store.users, photos: [] });
+    else {
+      const { error: insertErr } = await sb
+        .from('project_state')
+        .insert({ project_id: projectId, selections: {}, notes: {}, ratings: {}, users: store.users, photos: [] });
+      if (insertErr) {
+        console.error('프로젝트 상태 초기화 실패:', insertErr.message);
+        alert(`⚠️ 프로젝트 상태 초기화에 실패했습니다: ${insertErr.message}`);
+      }
+    }
   }
 
   // ---------- 호스트 ----------
@@ -169,15 +178,24 @@ export function useRoomController() {
 
       await loadOrInitProjectState(project.id);
 
+      const { data: prevStateRow } = await sb.from('project_state').select('photos').eq('project_id', project.id).maybeSingle();
+      const previousManifest = (prevStateRow?.photos as any[]) || [];
+
       setProgress({ open: true, title: '☁️ 썸네일을 업로드하는 중입니다...', sub: '', pct: 0 });
-      const { failedNames } = await syncPhotosToStorage(sb, project.id, photos, (p: UploadProgress) => {
-        setProgress({
-          open: true,
-          title: `☁️ 썸네일 업로드 중... (${p.done}/${p.total})`,
-          sub: p.failed > 0 ? `⚠️ 실패 ${p.failed}장` : '',
-          pct: Math.round((p.done / p.total) * 100),
-        });
-      });
+      const { failedNames } = await syncPhotosToStorage(
+        sb,
+        project.id,
+        photos,
+        (p: UploadProgress) => {
+          setProgress({
+            open: true,
+            title: `☁️ 썸네일 확인/업로드 중... (${p.done}/${p.total})`,
+            sub: p.failed > 0 ? `⚠️ 실패 ${p.failed}장` : '',
+            pct: Math.round((p.done / p.total) * 100),
+          });
+        },
+        previousManifest,
+      );
       setProgress(HIDDEN_PROGRESS);
       if (failedNames.length > 0) {
         alert(
@@ -305,9 +323,15 @@ export function useRoomController() {
   }, []);
 
   // ---------- 선택 상태 저장(디바운스) ----------
+  const persistErrorShownRef = useRef(false);
   const persistState = useCallback(() => {
     if (!sb || !store.projectId) return;
-    persistProjectStateFn(sb, store.projectId, { sel: store.sel, notes: store.notes, ratings: store.ratings, users: store.users });
+    persistProjectStateFn(sb, store.projectId, { sel: store.sel, notes: store.notes, ratings: store.ratings, users: store.users }, (message) => {
+      // 반복 저장마다 매번 띄우면 스팸이 되니, 세션당 한 번만 — 권한 문제면 계속 실패할 테니 한 번이면 충분히 알아챈다.
+      if (persistErrorShownRef.current) return;
+      persistErrorShownRef.current = true;
+      alert(`⚠️ 선택/별점/메모 저장에 실패했습니다(권한 문제일 수 있어요): ${message}`);
+    });
   }, [sb, store.projectId, store.sel, store.notes, store.ratings, store.users]);
 
   // ---------- 최종 확정 시 원본 P2P 요청/전송 ----------

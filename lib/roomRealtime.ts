@@ -98,6 +98,7 @@ export function persistProjectState(
     ratings: Record<string, any>;
     users: any[];
   },
+  onError?: (message: string) => void,
 ) {
   if (!projectId) return;
   if (saveTimer) clearTimeout(saveTimer);
@@ -114,6 +115,9 @@ export function persistProjectState(
         updated_at: new Date().toISOString(),
       })
       .eq('project_id', projectId);
-    if (error) console.error('선택 저장 실패:', error.message);
+    if (error) {
+      console.error('선택 저장 실패:', error.message);
+      onError?.(error.message);
+    }
   }, 300);
 }
