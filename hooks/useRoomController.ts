@@ -149,10 +149,22 @@ export function useRoomController() {
       await loadOrInitProjectState(project.id);
 
       setProgress({ open: true, title: '☁️ 썸네일을 업로드하는 중입니다...', sub: '', pct: 0 });
-      await syncPhotosToStorage(sb, project.id, photos, (p: UploadProgress) => {
-        setProgress({ open: true, title: `☁️ 썸네일 업로드 중... (${p.done}/${p.total})`, sub: '', pct: Math.round((p.done / p.total) * 100) });
+      const { failedNames } = await syncPhotosToStorage(sb, project.id, photos, (p: UploadProgress) => {
+        setProgress({
+          open: true,
+          title: `☁️ 썸네일 업로드 중... (${p.done}/${p.total})`,
+          sub: p.failed > 0 ? `⚠️ 실패 ${p.failed}장` : '',
+          pct: Math.round((p.done / p.total) * 100),
+        });
       });
       setProgress(HIDDEN_PROGRESS);
+      if (failedNames.length > 0) {
+        alert(
+          `⚠️ ${failedNames.length}장의 썸네일 업로드가 실패해서 참여자에게 안 보일 수 있어요.\n` +
+            `(${failedNames.slice(0, 5).join(', ')}${failedNames.length > 5 ? ' 외' : ''})\n` +
+            `네트워크 상태를 확인하고 "사진 폴더 선택/변경"을 다시 눌러 재시도해 주세요.`,
+        );
+      }
 
       setupChannel(project.id);
     },
@@ -230,6 +242,14 @@ export function useRoomController() {
       });
       store.setPhotos(photos);
       setProgress(HIDDEN_PROGRESS);
+
+      const failedCount = photos.filter((p) => !p.url).length;
+      if (failedCount > 0) {
+        alert(
+          `⚠️ 사진 ${failedCount}/${photos.length}장을 받지 못했습니다.\n` +
+            `호스트가 아직 사진 폴더를 안 열었거나 업로드가 안 끝났을 수 있어요. 잠시 후 새로고침해 보시거나 호스트에게 확인해 주세요.`,
+        );
+      }
     }
 
     setupChannel(projectIdParam);

@@ -15,21 +15,27 @@ async function photoStorageKey(folder: string, name: string): Promise<string> {
 
 export type PhotoManifestEntry = { id: string; name: string; folder: string; size: number; mtime: number; path: string };
 
-export type UploadProgress = { done: number; total: number };
+export type UploadProgress = { done: number; total: number; failed: number };
+export type SyncResult = { manifest: PhotoManifestEntry[]; failedNames: string[] };
 
 // 호스트: 로컬에서 만든 썸네일(blob URL)들을 Supabase Storage에 업로드하고 매니페스트를 project_state에 기록.
 // (직전 vanilla 버전의 sendPhotoSubset 자리를 대체 — 이제 P2P가 아니라 Storage 업로드)
+//
+// 업로드가 실패해도 매니페스트에 그대로 기록해버리면, 게스트는 존재하지 않는 파일을 내려받으려다
+// 전부 실패해서 그리드가 깨진 이미지 아이콘으로 가득 차게 된다 — 실패한 사진은 매니페스트에서
+// 아예 제외해서, 최소한 "업로드 성공한 사진만 게스트에게 보인다"가 되도록 한다.
 export async function syncPhotosToStorage(
   supabase: SupabaseClient,
   projectId: string,
   photos: Photo[],
   onProgress?: (p: UploadProgress) => void,
-): Promise<PhotoManifestEntry[]> {
+): Promise<SyncResult> {
   const { data: existing } = await supabase.storage.from(STORAGE_BUCKET).list(projectId, { limit: 5000 });
   const existingSizes = new Map<string, number>((existing || []).map((o) => [o.name, o.metadata?.size ?? -1]));
 
-  const manifest: PhotoManifestEntry[] = new Array(photos.length);
+  const manifest: (PhotoManifestEntry | null)[] = new Array(photos.length);
   let done = 0;
+  let failed = 0;
   const CONCURRENCY = 4;
   let nextIdx = 0;
 
@@ -43,26 +49,37 @@ export async function syncPhotosToStorage(
 
       const blob = await fetch(p.url).then((r) => r.blob());
       const alreadyUploaded = existingSizes.get(objectName) === blob.size;
+      let ok = alreadyUploaded;
       if (!alreadyUploaded) {
-        await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, {
+        const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, blob, {
           upsert: true,
           contentType: 'image/webp',
         });
+        if (error) {
+          console.error(`썸네일 업로드 실패 (${p.name}):`, error.message);
+          failed++;
+        } else {
+          ok = true;
+        }
       }
-      manifest[i] = { id: p.id, name: p.name, folder: p.folder, size: p.size, mtime: p.mtime, path };
+      manifest[i] = ok ? { id: p.id, name: p.name, folder: p.folder, size: p.size, mtime: p.mtime, path } : null;
 
       done++;
-      onProgress?.({ done, total: photos.length });
+      onProgress?.({ done, total: photos.length, failed });
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  await supabase
-    .from('project_state')
-    .update({ photos: manifest, updated_at: new Date().toISOString() })
-    .eq('project_id', projectId);
+  const okManifest = manifest.filter((m): m is PhotoManifestEntry => m !== null);
+  const failedNames = photos.filter((_, i) => manifest[i] === null).map((p) => p.name);
 
-  return manifest;
+  const { error: stateErr } = await supabase
+    .from('project_state')
+    .update({ photos: okManifest, updated_at: new Date().toISOString() })
+    .eq('project_id', projectId);
+  if (stateErr) console.error('사진 매니페스트 저장 실패:', stateErr.message);
+
+  return { manifest: okManifest, failedNames };
 }
 
 export type DownloadProgress = { done: number; total: number; cacheHits: number };

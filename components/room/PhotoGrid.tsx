@@ -72,9 +72,15 @@ export default function PhotoGrid({ onOpenPhoto, persistState }: { onOpenPhoto: 
                 className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border-[3px] bg-panel shadow-sm transition-transform hover:-translate-y-0.5"
                 style={{ borderColor: mine ? mineColor : 'transparent' }}
               >
-                <div className="relative block w-full overflow-hidden bg-panel2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.url} alt={p.name} loading="lazy" decoding="async" className="block w-full" />
+                <div className="relative flex min-h-[140px] w-full items-center justify-center overflow-hidden bg-panel2">
+                  {p.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.url} alt={p.name} loading="lazy" decoding="async" className="block w-full" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 py-10 text-xs text-text-muted">
+                      <span>⚠️ 못 받은 사진</span>
+                    </div>
+                  )}
                   <div className="absolute inset-0 hidden items-center justify-center bg-gray-900/40 text-sm font-semibold text-white group-hover:flex">🔍 크게 보기</div>
                   {simGroup && <div className="absolute left-2 top-2 z-[4] rounded-md bg-blue-500 px-1.5 py-1 text-[10px] font-bold text-white">📦 {simGroup}</div>}
                   {isEye && <div className="absolute bottom-2 left-2 z-[4] rounded-md bg-red-500 px-1.5 py-1 text-[10px] font-bold text-white">👁️ 눈감음 의심</div>}
