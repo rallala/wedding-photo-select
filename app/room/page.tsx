@@ -77,11 +77,13 @@ function RoomPageInner() {
       <TopBar
         mode={controller.mode}
         needsFolderPick={controller.needsFolderPick}
+        needsFolderRegrant={controller.needsFolderRegrant}
         projectTitle={controller.projectTitle}
         roomCode={roomCode}
         connectedGuests={connectedGuests}
         smartAnalyzing={analyzing}
         onOpenFolder={controller.openFolderPicker}
+        onRegrantFolder={controller.regrantFolderAccess}
         onRunSmartAnalysis={handleRunSmartAnalysis}
         onOpenTournament={() => setTourOpen(true)}
         onOpenWho={() => setWhoOpen(true)}

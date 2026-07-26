@@ -8,11 +8,13 @@ import { useAppStore } from '@/store/useAppStore';
 export default function TopBar({
   mode,
   needsFolderPick,
+  needsFolderRegrant,
   projectTitle,
   roomCode,
   connectedGuests,
   smartAnalyzing,
   onOpenFolder,
+  onRegrantFolder,
   onRunSmartAnalysis,
   onOpenTournament,
   onOpenWho,
@@ -22,11 +24,13 @@ export default function TopBar({
 }: {
   mode: 'host' | 'guest' | null;
   needsFolderPick: boolean;
+  needsFolderRegrant: boolean;
   projectTitle: string;
   roomCode: string | null;
   connectedGuests: number;
   smartAnalyzing: boolean;
   onOpenFolder: () => void;
+  onRegrantFolder: () => void;
   onRunSmartAnalysis: () => void;
   onOpenTournament: () => void;
   onOpenWho: () => void;
@@ -60,7 +64,12 @@ export default function TopBar({
         </span>
       )}
 
-      {mode === 'host' && (
+      {mode === 'host' && needsFolderRegrant && (
+        <button className="tbtn primary" onClick={onRegrantFolder} title="브라우저를 새로 열면 폴더 접근 권한이 초기화돼서, 사진을 다시 보려면 한 번 더 눌러서 허용해야 해요">
+          🔓 이전 폴더 접근 허용하고 열기
+        </button>
+      )}
+      {mode === 'host' && !needsFolderRegrant && (
         <button className="tbtn primary" onClick={onOpenFolder}>
           {needsFolderPick ? '📁 사진 폴더 선택 → 셀렉룸 시작' : '📁 사진 폴더 선택/변경'}
         </button>

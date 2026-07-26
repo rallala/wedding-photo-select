@@ -37,6 +37,11 @@ export function useRoomController() {
   const [needsFolderPick, setNeedsFolderPick] = useState(mode === 'host');
   const [connectError, setConnectError] = useState<string | null>(null);
   const [receivedOriginals, setReceivedOriginals] = useState<ReceivedOriginal[]>([]);
+  // 이전에 열었던 폴더 핸들은 IndexedDB에 남아있지만, 브라우저가 재시작되면 대개 접근 권한이
+  // 'granted'로 자동 복원되지 않고 'prompt'로 돌아간다 — queryPermission은 그 상태를 확인만 할 뿐
+  // 사용자에게 권한을 다시 물어보진 않으므로(사용자 제스처 없이는 요청 자체가 안 됨), 버튼을 눌러야만
+  // 열리는 requestPermission으로 넘어가기 전까지 이 핸들을 들고 있는다.
+  const [pendingReopenHandle, setPendingReopenHandle] = useState<FileSystemDirectoryHandle | null>(null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const clientIdRef = useRef(Math.random().toString(36).slice(2, 10));
@@ -175,11 +180,28 @@ export function useRoomController() {
     try {
       const perm = await (handle as any).queryPermission({ mode: 'readwrite' });
       if (perm === 'granted') await runHostSetup(handle);
-      // 거부된 경우엔 UI에서 수동으로 "이전 폴더 접근 허용" 버튼을 눌러 openFolderPicker로 재시도하게 함
+      else setPendingReopenHandle(handle); // 버튼을 눌러 재요청해야 함 — TopBar가 이 상태를 보고 버튼 문구를 바꿈
     } catch {
       /* 무시 — 수동 선택으로 폴백 */
     }
   }, [projectIdParam, runHostSetup]);
+
+  // "🔓 이전 폴더 접근 허용하고 열기" 버튼 클릭 시 실행 — requestPermission은 사용자 제스처(클릭) 안에서
+  // 호출해야 브라우저가 실제로 허용 팝업을 띄운다(queryPermission과 달리 이게 핵심 차이).
+  const regrantFolderAccess = useCallback(async () => {
+    if (!pendingReopenHandle) return;
+    try {
+      const granted = await (pendingReopenHandle as any).requestPermission({ mode: 'readwrite' });
+      if (granted === 'granted') {
+        setPendingReopenHandle(null);
+        await runHostSetup(pendingReopenHandle);
+        return;
+      }
+    } catch {}
+    // 거부됐으면 새로 폴더를 고르는 기존 방식으로 폴백
+    setPendingReopenHandle(null);
+    await openFolderPicker();
+  }, [pendingReopenHandle, runHostSetup, openFolderPicker]);
 
   // ---------- 게스트 ----------
   const runGuestSetup = useCallback(async () => {
@@ -263,9 +285,11 @@ export function useRoomController() {
     progress,
     projectTitle,
     needsFolderPick,
+    needsFolderRegrant: !!pendingReopenHandle,
     connectError,
     receivedOriginals,
     openFolderPicker,
+    regrantFolderAccess,
     persistState,
     requestOriginalsFromHost,
     pushOriginalsToAllGuests,
