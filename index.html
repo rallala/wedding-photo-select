@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicSelec (픽셀렉) - 프리미엄 웹 웨딩 사진 셀렉</title>
-<meta name="description" content="프로그램 설치 0초! 내 브라우저에서 안전하게 구동되는 신랑·신부 실시간 동시 셀렉 플랫폼. 1:1 토너먼트, 별점, 작가 보정 요청서 엑셀 다운로드 지원.">
+<title>PicSelec (픽셀렉) - 링크 하나로 끝내는 모두의 사진 셀렉</title>
+<meta name="description" content="프로그램 설치 0초! 내 브라우저에서 안전하게 구동되는 실시간 동시 사진 셀렉 플랫폼. 여행·모임·행사·웨딩 등 누구와 함께든 1:1 토너먼트, 별점, 보정 요청서 엑셀 다운로드 지원.">
 <!-- Google Fonts: Inter & Noto Sans KR -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -255,6 +255,9 @@
   <button class="tbtn" id="btnTournament">🏆 1:1 토너먼트 (유사 컷)</button>
   <button class="tbtn" id="btnWhoChange">👤 <span id="whoLbl">신랑</span> (프로필/역할 변경)</button>
   <button class="tbtn" id="btnRoomShare">📱 룸 코드: <b id="roomCodeVal">wps-ready</b></button>
+  <label class="tbtn" id="originalToggleWrap" style="display:none; cursor:pointer;" title="켜면 게스트가 원본 화질을 요청해서 보거나 다운로드할 수 있어요">
+    <input type="checkbox" id="allowOriginalCheckbox" style="margin-right:6px;"> 게스트에 원본 제공
+  </label>
   <button class="tbtn" id="btnSideToggle">📋 선택 현황 (<b id="sideBadgeCount">0</b>)</button>
 
   <div class="counts" id="countsBar"></div>
@@ -387,6 +390,9 @@
       <span style="font-size:12px; color:#9CA3AF;">내 별점:</span>
       <div id="lbStars" style="display:flex; gap:4px; font-size:18px; cursor:pointer;"></div>
     </div>
+    <div id="lbOriginalRow" style="display:none;">
+      <button class="tbtn" id="lbOriginalBtn" style="background:rgba(255,255,255,0.15); color:#fff; font-size:12px;"></button>
+    </div>
     <div id="lbNotes" style="display:flex; flex-direction:column; gap:6px;"></div>
   </div>
   <div class="lb-foot">
@@ -400,26 +406,27 @@
 
 <script>
 const state = {
-  who: 'groom',
-  // 신랑/신부가 기본값이지만, 작가님·친구 등 프로필을 자유롭게 추가할 수 있다(profile 관련 함수 참고)
+  who: 'p1',
+  // 참여자1/참여자2가 기본값이지만, 작가님·친구 등 프로필을 자유롭게 추가할 수 있다(profile 관련 함수 참고)
   users: [
-    { id: 'groom', name: '신랑', color: '#3B82F6' },
-    { id: 'bride', name: '신부', color: '#EC4899' }
+    { id: 'p1', name: '참여자1', color: '#3B82F6' },
+    { id: 'p2', name: '참여자2', color: '#EC4899' }
   ],
   photos: [],
   folders: [],
   byId: new Map(),
-  sel: { groom: new Set(), bride: new Set() },
+  sel: { p1: new Set(), p2: new Set() },
   ratings: {},
   notes: {},
   hashesCache: [],
   similarGroups: new Map(),
   eyeClosedSet: new Set(),
   filter: { q: '', folder: '', view: 'all' },
-  sideTab: 'groom',
+  sideTab: 'p1',
   sensLevel: 3, // 1~5 감도
   lbId: null,
   dirHandle: null, // 브라우저로 연 원본 폴더 핸들(있으면 최종 확정 시 원본 복사에 사용)
+  allowOriginal: false, // 게스트 전용: 호스트가 원본 제공을 켰는지(manifest/toggle-original로 갱신)
   roomCode: 'wps-' + Math.random().toString(36).substring(2, 8)
 };
 
@@ -540,11 +547,22 @@ const room = {
   projectId: null,        // project_state를 찾는 실제 키
   roomCode: null,         // 사람이 공유하는 짧은 초대 코드(호스트 전용 표시용)
   peers: new Map(),       // guestId -> RTCPeerConnection (호스트 전용)
+  hostChannels: new Set(), // 현재 열려있는 DataChannel들 (호스트 전용, 원본 제공 토글 변경을 이미 붙은 게스트에게도 즉시 알리기 위함)
   hostPc: null,           // 게스트 전용
+  guestChannel: null,     // 게스트 전용: 호스트에 원본 요청을 보낼 때 씀
+  allowOriginalDownload: false, // 호스트 전용: 지금 원본 제공이 켜져 있는지(Supabase projects.allow_original_download와 동기화)
   connectedGuests: 0,
   receivedCount: 0,
   totalCount: 0
 };
+
+// 게스트 전용: 원본 요청 중인 사진들의 미해결 Promise, id -> {resolve, reject}
+const pendingOriginalRequests = new Map();
+// 게스트 전용: 이번 세션에서 이미 받은 원본의 blob URL 메모리 캐시(재요청 방지, IndexedDB에도 별도 저장)
+const originalBlobCache = new Map();
+function origCacheKey(scope, folder, name, size, mtime) {
+  return `orig::${thumbCacheKey(scope, folder, name, size, mtime)}`;
+}
 
 function broadcastRoom(event, payload) {
   if (!room.channel) return;
@@ -553,6 +571,26 @@ function broadcastRoom(event, payload) {
 
 function updateRoomBadge() {
   if (room.isHost) $('#roomCodeVal').textContent = `${room.roomCode} (${room.connectedGuests}명 접속)`;
+}
+
+// 호스트 전용: 원본 제공 토글 체크박스 노출 + 상태 반영
+function renderOriginalToggleUI() {
+  const wrap = $('#originalToggleWrap');
+  if (!wrap || !room.isHost) return;
+  wrap.style.display = 'inline-flex';
+  $('#allowOriginalCheckbox').checked = room.allowOriginalDownload;
+}
+
+async function onToggleAllowOriginal(checked) {
+  room.allowOriginalDownload = checked;
+  if (sb && room.projectId) {
+    const { error } = await sb.from('projects').update({ allow_original_download: checked }).eq('id', room.projectId);
+    if (error) console.error('원본 제공 설정 저장 실패:', error.message);
+  }
+  // 이미 붙어있는 게스트에게도 즉시 반영(재접속 없이 라이트박스 버튼이 바로 나타나거나 사라짐)
+  room.hostChannels.forEach(dc => {
+    if (dc.readyState === 'open') dc.send(JSON.stringify({ type: 'toggle-original', allowOriginal: checked }));
+  });
 }
 
 // 지금 어느 프로젝트를 열고 있는지 화면에 계속 표시 — 폴더를 고르기 전에도 바로 보여서,
@@ -591,6 +629,7 @@ function shareRoomCode() {
   }
 }
 $('#btnRoomShare').onclick = shareRoomCode;
+$('#allowOriginalCheckbox').onchange = (e) => onToggleAllowOriginal(e.target.checked);
 
 // 프로젝트는 landing.html에서 이름 붙여 미리 만들어지고, 여기서는 그 프로젝트에 폴더를 고정 연결만 합니다.
 // 처음 여는 프로젝트면 지금 고른 폴더로 확정하고, 이미 폴더가 정해진 프로젝트면 같은 폴더인지 검증합니다
@@ -676,7 +715,9 @@ async function initRoomHost(folderName) {
   if (!project) return;
   room.projectId = project.id;
   room.roomCode = project.room_code;
+  room.allowOriginalDownload = !!project.allow_original_download;
   updateRoomBadge();
+  renderOriginalToggleUI();
 
   await loadOrInitProjectState(room.projectId);
   renderViewButtons(); renderSideTabs();
@@ -723,22 +764,26 @@ async function handleSignalAtHost(payload) {
 function wireHostDataChannel(dc) {
   dc.onopen = async () => {
     room.connectedGuests++;
+    room.hostChannels.add(dc);
     updateRoomBadge();
     // 사진 바이트는 아직 안 보내고 매니페스트만 먼저 전송 — 게스트가 자기 캐시와 대조해서
     // 실제로 없는 것만 알려주면(need-list) 그때 그만큼만 전송한다.
     dc.send(JSON.stringify({
       type: 'manifest',
       photos: state.photos.map(p => ({ id: p.id, name: p.name, folder: p.folder, size: p.size || 0, mtime: p.mtime || 0 })),
-      total: state.photos.length
+      total: state.photos.length,
+      allowOriginal: room.allowOriginalDownload
     }));
   };
   dc.onmessage = (e) => {
     if (typeof e.data !== 'string') return;
     let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
     if (msg.type === 'need-list') sendPhotoSubset(dc, msg.ids);
+    else if (msg.type === 'request-original') sendOriginalFile(dc, msg.id);
   };
   dc.onclose = () => {
     room.connectedGuests = Math.max(0, room.connectedGuests - 1);
+    room.hostChannels.delete(dc);
     updateRoomBadge();
   };
 }
@@ -772,6 +817,28 @@ async function sendPhotoSubset(dc, ids) {
     dc.send(JSON.stringify({ type: 'img-end', id: p.id }));
   }
   if (dc.readyState === 'open') dc.send(JSON.stringify({ type: 'all-sent' }));
+}
+
+// 게스트가 라이트박스에서 "원본으로 보기"를 눌렀을 때 그 한 장만 원본(p.file) 그대로 전송.
+// 썸네일과 별개 프로토콜(orig-start/orig-end)을 써서 사전 일괄 전송(sendPhotoSubset)과 섞이지 않게 한다.
+async function sendOriginalFile(dc, id) {
+  if (!room.allowOriginalDownload) {
+    if (dc.readyState === 'open') dc.send(JSON.stringify({ type: 'original-denied', id }));
+    return;
+  }
+  const p = state.byId.get(id);
+  if (!p || !p.file || dc.readyState !== 'open') {
+    if (dc.readyState === 'open') dc.send(JSON.stringify({ type: 'original-denied', id }));
+    return;
+  }
+  const buf = await p.file.arrayBuffer();
+  dc.send(JSON.stringify({ type: 'orig-start', id, mime: p.file.type || 'image/jpeg' }));
+  for (let off = 0; off < buf.byteLength; off += CHUNK_SIZE) {
+    await waitForBufferedAmountLow(dc);
+    if (dc.readyState !== 'open') return;
+    dc.send(buf.slice(off, off + CHUNK_SIZE));
+  }
+  dc.send(JSON.stringify({ type: 'orig-end', id }));
 }
 
 // ===== 게스트 =====
@@ -823,17 +890,21 @@ async function handleSignalAtGuest(payload) {
 
 function wireGuestDataChannel(dc) {
   dc.binaryType = 'arraybuffer';
-  let building = null;
+  room.guestChannel = dc; // 라이트박스의 "원본으로 보기"에서 request-original을 보낼 때 씀
+  let building = null;      // 썸네일 일괄 수신용(img-start/img-end)
+  let origBuilding = null;  // 원본 온디맨드 수신용(orig-start/orig-end) — 시간상 겹치지 않으므로 별개 슬롯으로 구분
   const manifestMeta = new Map(); // id -> {size, mtime}, 수신한 사진을 캐시에 저장할 때 키를 다시 만들기 위함
 
   dc.onmessage = async (e) => {
     if (typeof e.data !== 'string') {
-      if (building) building.chunks.push(new Uint8Array(e.data));
+      if (origBuilding) origBuilding.chunks.push(new Uint8Array(e.data));
+      else if (building) building.chunks.push(new Uint8Array(e.data));
       return;
     }
     const msg = JSON.parse(e.data);
 
     if (msg.type === 'manifest') {
+      state.allowOriginal = !!msg.allowOriginal;
       state.photos = msg.photos.map(p => ({ ...p, url: '' }));
       state.byId.clear();
       state.photos.forEach(p => { state.byId.set(p.id, p); manifestMeta.set(p.id, { size: p.size, mtime: p.mtime }); });
@@ -892,8 +963,60 @@ function wireGuestDataChannel(dc) {
       renderGrid();
       updateCounts();
       renderSidebar();
+    } else if (msg.type === 'toggle-original') {
+      state.allowOriginal = !!msg.allowOriginal;
+      if (state.lbId) renderLightboxOriginalControls(state.lbId); // 라이트박스가 열려있으면 버튼 즉시 갱신
+    } else if (msg.type === 'orig-start') {
+      origBuilding = { id: msg.id, mime: msg.mime, chunks: [] };
+    } else if (msg.type === 'orig-end') {
+      if (origBuilding && origBuilding.id === msg.id) {
+        const blob = new Blob(origBuilding.chunks, { type: origBuilding.mime });
+        const url = URL.createObjectURL(blob);
+        originalBlobCache.set(msg.id, url);
+        const p = state.byId.get(msg.id);
+        if (p) {
+          const meta = manifestMeta.get(msg.id);
+          if (meta) idbSet(origCacheKey(room.projectId, p.folder, p.name, meta.size, meta.mtime), blob);
+        }
+        const pending = pendingOriginalRequests.get(msg.id);
+        if (pending) { pending.resolve(url); pendingOriginalRequests.delete(msg.id); }
+      }
+      origBuilding = null;
+    } else if (msg.type === 'original-denied') {
+      const pending = pendingOriginalRequests.get(msg.id);
+      if (pending) { pending.reject(new Error('원본 제공이 꺼져 있거나 요청을 처리할 수 없습니다.')); pendingOriginalRequests.delete(msg.id); }
     }
   };
+}
+
+// 게스트 전용: 특정 사진의 원본을 요청 — 메모리/IndexedDB 캐시에 있으면 그걸 쓰고, 없으면 호스트에 P2P로 요청
+async function requestOriginal(id) {
+  if (originalBlobCache.has(id)) return originalBlobCache.get(id);
+
+  const p = state.byId.get(id);
+  if (p) {
+    const meta = { size: p.size, mtime: p.mtime };
+    const cached = await idbGet(origCacheKey(room.projectId, p.folder, p.name, meta.size, meta.mtime));
+    if (cached) {
+      const url = URL.createObjectURL(cached);
+      originalBlobCache.set(id, url);
+      return url;
+    }
+  }
+
+  if (!room.guestChannel || room.guestChannel.readyState !== 'open') {
+    throw new Error('호스트와 연결되어 있지 않아 원본을 받을 수 없습니다.');
+  }
+  return new Promise((resolve, reject) => {
+    pendingOriginalRequests.set(id, { resolve, reject });
+    room.guestChannel.send(JSON.stringify({ type: 'request-original', id }));
+    setTimeout(() => {
+      if (pendingOriginalRequests.has(id)) {
+        pendingOriginalRequests.delete(id);
+        reject(new Error('원본 요청이 시간 초과되었습니다. 호스트가 접속 중인지 확인해 주세요.'));
+      }
+    }, 20000);
+  });
 }
 
 window.addEventListener('beforeunload', () => { room.channel?.unsubscribe(); });
@@ -1675,16 +1798,56 @@ function openLightbox(id) {
     // 레거시 로컬 서버 모드: 원본은 /img, 썸네일은 /thumb
     $('#lbImg').src = '/img?path=' + encodeURIComponent(p.id);
   } else {
-    // 게스트: P2P로 받은 썸네일이 전부라 원본이 없음
-    $('#lbImg').src = p.url;
+    // 게스트: 기본은 P2P로 받은 썸네일. 호스트가 원본 제공을 켰으면 아래 원본보기 버튼으로 요청 가능.
+    $('#lbImg').src = originalBlobCache.get(id) || p.url;
   }
   $('#lbTitle').textContent = p.name;
 
   const isPicked = state.sel[state.who]?.has(id);
   $('#lbPickBtn').textContent = isPicked ? '♥ 내 선택 취소' : '♡ 내 선택 저장';
   renderLightboxExtra(id);
+  renderLightboxOriginalControls(id);
 
   $('#lb').classList.add('open');
+}
+
+// 게스트 전용 라이트박스 하단 버튼: 호스트가 원본 제공을 켰을 때만 노출.
+// 아직 못 받았으면 "원본으로 보기"(누르면 P2P 요청), 이미 받았으면 "원본 다운로드"로 바뀜.
+function renderLightboxOriginalControls(id) {
+  const row = $('#lbOriginalRow');
+  const btn = $('#lbOriginalBtn');
+  if (!row || !btn) return;
+
+  // 호스트/레거시 로컬 모드는 이미 원본(p.file 또는 /img)을 보고 있으므로 이 버튼 자체가 필요 없음
+  if (!ROOM_MODE || room.isHost || !state.allowOriginal) { row.style.display = 'none'; return; }
+
+  row.style.display = 'block';
+  const cachedUrl = originalBlobCache.get(id);
+  if (cachedUrl) {
+    btn.textContent = '⬇️ 원본 다운로드';
+    btn.disabled = false;
+    btn.onclick = () => {
+      const a = document.createElement('a');
+      a.href = cachedUrl; a.download = state.byId.get(id)?.name || 'original.jpg';
+      document.body.appendChild(a); a.click(); a.remove();
+    };
+    return;
+  }
+
+  btn.textContent = '🔍 원본으로 보기';
+  btn.disabled = false;
+  btn.onclick = async () => {
+    btn.disabled = true;
+    btn.textContent = '⏳ 원본을 받는 중...';
+    try {
+      const url = await requestOriginal(id);
+      if (state.lbId === id) { $('#lbImg').src = url; renderLightboxOriginalControls(id); }
+    } catch (err) {
+      alert(err.message || '원본을 받아오지 못했습니다.');
+      btn.disabled = false;
+      btn.textContent = '🔍 원본으로 보기';
+    }
+  };
 }
 
 $('#lbClose').onclick = () => $('#lb').classList.remove('open');
@@ -1881,6 +2044,22 @@ async function copySelectedFilesToFolder(ids) {
   return { ok: true, count, total: ids.length, destName };
 }
 
+// 게스트 전용: 폴더 접근 권한이 없으니, 선택된 사진들의 원본을 하나씩 P2P로 요청받아 순차 다운로드
+async function downloadSelectedOriginals(ids) {
+  let ok = 0;
+  for (const id of ids) {
+    try {
+      const url = await requestOriginal(id);
+      const p = state.byId.get(id);
+      const a = document.createElement('a');
+      a.href = url; a.download = p?.name || (id + '.jpg');
+      document.body.appendChild(a); a.click(); a.remove();
+      ok++;
+    } catch (_) { /* 개별 실패는 건너뛰고 나머지는 계속 진행 */ }
+  }
+  return ok;
+}
+
 async function runFinalConfirm() {
   const scope = document.querySelector('input[name="finalScope"]:checked')?.value || 'union';
   const ids = computeFinalScopeIds(scope);
@@ -1908,8 +2087,11 @@ async function runFinalConfirm() {
     } catch (e) {
       alert('보정요청서는 다운로드되었지만, 서버 복사 요청에 실패했습니다.');
     }
+  } else if (state.allowOriginal) {
+    const okCount = await downloadSelectedOriginals(ids);
+    alert(`✅ 보정요청서(CSV)가 다운로드되었습니다.\n원본 사진 ${okCount}/${ids.length}장이 순차적으로 다운로드되었습니다.`);
   } else {
-    alert('보정요청서(CSV)가 다운로드되었습니다.\n(원본 사진 폴더에 접근 권한이 없는 게스트 기기라 사진 복사는 건너뜁니다. 폴더를 연 호스트 기기에서 확정하면 사진도 함께 복사돼요.)');
+    alert('보정요청서(CSV)가 다운로드되었습니다.\n(원본 사진 폴더에 접근 권한이 없는 게스트 기기라 사진 복사는 건너뜁니다. 호스트가 "게스트에 원본 제공"을 켜면 원본도 받아볼 수 있어요.)');
   }
 }
 

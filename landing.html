@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PicSelec (픽셀렉) - 프리미엄 웨딩 사진 셀렉 플랫폼</title>
-<meta name="description" content="별도의 프로그램 설치나 데이터 업로드 없이, 내 컴퓨터의 원본 사진을 안전하게 함께 셀렉하는 프리미엄 웨딩 셀렉 서비스.">
+<title>PicSelec (픽셀렉) - 링크 하나로 끝내는 모두의 사진 셀렉</title>
+<meta name="description" content="별도의 프로그램 설치나 데이터 업로드 없이, 내 컴퓨터의 원본 사진을 안전하게 함께 셀렉하는 무료 사진 공동 셀렉 서비스. 여행, 모임, 행사, 웨딩까지.">
 <!-- Google Fonts: Inter & Noto Sans KR -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -490,9 +490,9 @@
 </header>
 
 <main class="hero-section">
-  <div class="hero-tag">프리미엄 무설치 웨딩 셀렉 솔루션</div>
-  <h1 class="hero-title">가장 소중한 순간의 완성,<br>편안하고 안심되는 웨딩 사진 셀렉</h1>
-  <p class="hero-desc">별도의 프로그램 설치나 무거운 사진 업로드 없이,<br>내 컴퓨터의 사진을 안전하고 자유롭게 함께 골라보세요.</p>
+  <div class="hero-tag">무설치 · 무료 사진 공동 셀렉 솔루션</div>
+  <h1 class="hero-title">링크 하나로 끝내는<br>모두의 사진 셀렉, PicSelec</h1>
+  <p class="hero-desc">여행, 모임, 행사, 웨딩까지—별도의 프로그램 설치나 무거운 사진 업로드 없이,<br>내 컴퓨터의 사진을 회원가입한 상대와 안전하고 자유롭게 함께 골라보세요.</p>
 
   <!-- 메인 역할 선택 카드 -->
   <div class="action-grid">
@@ -500,13 +500,13 @@
       <div>
         <div class="card-icon">📁</div>
         <h3 class="card-title">내 PC 사진으로 셀렉하기</h3>
-        <p class="card-text">컴퓨터에 저장된 웨딩 원본 사진 폴더를 열고 룸을 개설합니다. (프로그램 다운로드 없음)</p>
+        <p class="card-text">컴퓨터에 저장된 원본 사진 폴더를 열고 룸을 개설합니다. (프로그램 다운로드 없음)</p>
       </div>
 
       <div id="myProjectsList" style="display:flex; flex-direction:column; gap:8px; margin:4px 0 12px;"></div>
 
       <div class="guest-input-group">
-        <input type="text" class="input-code" id="newProjectName" placeholder="새 프로젝트 이름 (예: 2026 봄 웨딩)" maxlength="40">
+        <input type="text" class="input-code" id="newProjectName" placeholder="새 프로젝트 이름 (예: 2026 제주도 여행)" maxlength="40">
         <button class="btn-action-primary" onclick="createProject()">새 프로젝트 만들기</button>
       </div>
     </div>
@@ -527,7 +527,7 @@
   <div class="info-features">
     <div class="info-item">
       <h4>실시간 동시 셀렉</h4>
-      <p>신랑님과 신부님의 기기가 실시간으로 연동되어 함께 고를 수 있습니다.</p>
+      <p>참여자들의 기기가 실시간으로 연동되어 함께 고를 수 있습니다.</p>
     </div>
     <div class="info-item">
       <h4>1:1 비교 토너먼트</h4>
@@ -566,7 +566,7 @@
     <form class="form-stack" id="formLogin" onsubmit="handleLoginSubmit(event)">
       <div class="form-field">
         <label>이메일 주소</label>
-        <input type="email" id="loginEmail" placeholder="example@wedding.com" required>
+        <input type="email" id="loginEmail" placeholder="example@email.com" required>
       </div>
       <div class="form-field">
         <label>비밀번호</label>
@@ -582,7 +582,7 @@
     <form class="form-stack" id="formSignup" style="display:none;" onsubmit="handleSignupSubmit(event)">
       <div class="form-field">
         <label>이메일 주소 *</label>
-        <input type="email" id="signupEmail" placeholder="example@wedding.com" required>
+        <input type="email" id="signupEmail" placeholder="example@email.com" required>
       </div>
       <div class="form-field">
         <label>비밀번호 * (8자 이상, 영문+숫자+특수문자 포함)</label>
@@ -590,7 +590,7 @@
       </div>
       <div class="form-field">
         <label>이름 / 닉네임 *</label>
-        <input type="text" id="signupName" placeholder="예: 김신랑 또는 이신부" required>
+        <input type="text" id="signupName" placeholder="예: 김민준 또는 홍길동" required>
       </div>
 
       <div class="form-field">
@@ -619,12 +619,12 @@
   <div class="modal-box">
     <button class="modal-close" onclick="closeSocialExtraModal()">✕</button>
     <h2 style="font-size:20px; font-weight:700; margin-bottom:6px;">👋 환영합니다!</h2>
-    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">원활한 웨딩 셀렉 서비스를 위해 성별과 생년월일을 선택해 주세요 (1초 완료)</p>
+    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">원활한 서비스 이용을 위해 성별과 생년월일을 선택해 주세요 (1초 완료)</p>
     
     <form class="form-stack" onsubmit="handleSocialExtraSubmit(event)">
       <div class="form-field" id="extraEmailField" style="display:none;">
         <label>연락 가능한 이메일 *</label>
-        <input type="email" id="extraEmail" placeholder="example@wedding.com">
+        <input type="email" id="extraEmail" placeholder="example@email.com">
         <p style="font-size:11px; color:var(--text-secondary); margin-top:4px;">가입하신 계정이 이메일 제공에 동의하지 않아, 안내 발송을 위해 별도로 받고 있어요.</p>
       </div>
 
@@ -667,7 +667,7 @@
       <form class="form-stack" onsubmit="handleResetRequestSubmit(event)">
         <div class="form-field">
           <label>가입 이메일 주소 *</label>
-          <input type="email" id="resetEmail" placeholder="example@wedding.com" required>
+          <input type="email" id="resetEmail" placeholder="example@email.com" required>
         </div>
         <button type="submit" class="btn-submit-form">재설정 링크 받기</button>
       </form>
@@ -748,7 +748,7 @@
 </div>
 
 <footer>
-  <p>© 2026 PicSelec. All rights reserved. | Premium Wedding Photo Selection</p>
+  <p>© 2026 PicSelec. All rights reserved. | 모두의 사진 공동 셀렉</p>
 </footer>
 
 <script>

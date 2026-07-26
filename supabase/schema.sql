@@ -13,6 +13,7 @@ create table if not exists public.projects (
   title text not null default '이름 없는 프로젝트',
   folder_name text not null default '', -- 첫 폴더 선택 시 채워지고, 이후 고정(같은 프로젝트=같은 폴더)
   room_code text not null unique,
+  allow_original_download boolean not null default false, -- 호스트가 켜면 게스트도 P2P로 원본 화질을 요청/수신 가능
   created_at timestamptz not null default now()
 );
 
@@ -21,6 +22,7 @@ alter table public.projects add column if not exists title text not null default
 alter table public.projects alter column folder_name drop not null;
 alter table public.projects alter column folder_name set default '';
 alter table public.projects drop constraint if exists projects_host_id_folder_name_key;
+alter table public.projects add column if not exists allow_original_download boolean not null default false;
 
 create table if not exists public.project_members (
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -35,13 +37,13 @@ create table if not exists public.project_state (
   selections jsonb not null default '{}'::jsonb,
   notes jsonb not null default '{}'::jsonb,
   ratings jsonb not null default '{}'::jsonb,
-  users jsonb not null default '[{"id":"groom","name":"신랑","color":"#3B82F6"},{"id":"bride","name":"신부","color":"#EC4899"}]'::jsonb,
+  users jsonb not null default '[{"id":"p1","name":"참여자1","color":"#3B82F6"},{"id":"p2","name":"참여자2","color":"#EC4899"}]'::jsonb,
   updated_at timestamptz not null default now()
 );
 
 -- 구버전(신랑/신부 프로필 추가 기능 이전)을 이미 실행한 경우를 위한 마이그레이션
 alter table public.project_state add column if not exists users jsonb not null
-  default '[{"id":"groom","name":"신랑","color":"#3B82F6"},{"id":"bride","name":"신부","color":"#EC4899"}]'::jsonb;
+  default '[{"id":"p1","name":"참여자1","color":"#3B82F6"},{"id":"p2","name":"참여자2","color":"#EC4899"}]'::jsonb;
 
 alter table public.projects enable row level security;
 alter table public.project_members enable row level security;
