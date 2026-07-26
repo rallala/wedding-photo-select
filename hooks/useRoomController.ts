@@ -23,6 +23,25 @@ const HIDDEN_PROGRESS: ProgressState = { open: false, title: '', sub: '', pct: 0
 
 export type ReceivedOriginal = { id: string; name: string; blob: Blob };
 
+// 팝업으로 매번 끊기게 알리는 대신, 화면 한쪽에 계속 떠 있는 작은 상태 표시줄에 반영한다 —
+// 문제가 재발해도 스크린샷 한 장으로 바로 진단할 수 있게.
+export type SyncStatus = {
+  memberError: string | null; // project_members 등록 실패
+  stateReadError: string | null; // project_state 조회/초기화 실패
+  persistError: string | null; // 선택/별점/메모 저장 실패
+  uploadFailedCount: number; // 호스트: 썸네일 업로드 실패 수
+  downloadFailedCount: number; // 게스트: 썸네일 다운로드 실패 수
+  photosTotal: number;
+};
+const EMPTY_SYNC_STATUS: SyncStatus = {
+  memberError: null,
+  stateReadError: null,
+  persistError: null,
+  uploadFailedCount: 0,
+  downloadFailedCount: 0,
+  photosTotal: 0,
+};
+
 // 호스트/게스트 룸 연결, 폴더 열기+Storage 동기화, 실시간 상태 구독, 최종 확정 시 P2P 핸드오프까지
 // 전부 감싸는 컨트롤러 훅. (wedding-photo-select/index.html의 initRoomHost/initRoomGuest/runFinalConfirm 자리를 대체)
 export function useRoomController() {
@@ -42,6 +61,7 @@ export function useRoomController() {
   // 사용자에게 권한을 다시 물어보진 않으므로(사용자 제스처 없이는 요청 자체가 안 됨), 버튼을 눌러야만
   // 열리는 requestPermission으로 넘어가기 전까지 이 핸들을 들고 있는다.
   const [pendingReopenHandle, setPendingReopenHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(EMPTY_SYNC_STATUS);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const clientIdRef = useRef(Math.random().toString(36).slice(2, 10));
@@ -61,6 +81,7 @@ export function useRoomController() {
       lastManifestSigRef.current = sig;
       const photos = await downloadPhotosFromManifest(sb, projectIdParam, manifest as any);
       store.setPhotos(photos);
+      setSyncStatus((s) => ({ ...s, downloadFailedCount: photos.filter((p) => !p.url).length, photosTotal: photos.length }));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sb, projectIdParam],
@@ -111,7 +132,7 @@ export function useRoomController() {
     const { data, error } = await sb.from('project_state').select('*').eq('project_id', projectId).maybeSingle();
     if (error) {
       console.error('프로젝트 상태 로드 실패:', error.message);
-      alert(`⚠️ 프로젝트 상태를 불러오지 못했습니다(권한 문제일 수 있어요): ${error.message}`);
+      setSyncStatus((s) => ({ ...s, stateReadError: error.message }));
       return;
     }
     if (data) applyRow(data as any);
@@ -121,7 +142,7 @@ export function useRoomController() {
         .insert({ project_id: projectId, selections: {}, notes: {}, ratings: {}, users: store.users, photos: [] });
       if (insertErr) {
         console.error('프로젝트 상태 초기화 실패:', insertErr.message);
-        alert(`⚠️ 프로젝트 상태 초기화에 실패했습니다: ${insertErr.message}`);
+        setSyncStatus((s) => ({ ...s, stateReadError: insertErr.message }));
       }
     }
   }
@@ -197,13 +218,7 @@ export function useRoomController() {
         previousManifest,
       );
       setProgress(HIDDEN_PROGRESS);
-      if (failedNames.length > 0) {
-        alert(
-          `⚠️ ${failedNames.length}장의 썸네일 업로드가 실패해서 참여자에게 안 보일 수 있어요.\n` +
-            `(${failedNames.slice(0, 5).join(', ')}${failedNames.length > 5 ? ' 외' : ''})\n` +
-            `네트워크 상태를 확인하고 "사진 폴더 선택/변경"을 다시 눌러 재시도해 주세요.`,
-        );
-      }
+      setSyncStatus((s) => ({ ...s, uploadFailedCount: failedNames.length, photosTotal: photos.length }));
 
       setupChannel(project.id);
     },
@@ -272,7 +287,10 @@ export function useRoomController() {
       const { error: memberErr } = await sb
         .from('project_members')
         .upsert({ project_id: projectIdParam, user_id: authUser.id, role: 'guest' }, { onConflict: 'project_id,user_id', ignoreDuplicates: true });
-      if (memberErr) console.error('project_members 등록 실패:', memberErr.message);
+      if (memberErr) {
+        console.error('project_members 등록 실패:', memberErr.message);
+        setSyncStatus((s) => ({ ...s, memberError: memberErr.message }));
+      }
     }
 
     await loadOrInitProjectState(projectIdParam);
@@ -296,12 +314,7 @@ export function useRoomController() {
       setProgress(HIDDEN_PROGRESS);
 
       const failedCount = photos.filter((p) => !p.url).length;
-      if (failedCount > 0) {
-        alert(
-          `⚠️ 사진 ${failedCount}/${photos.length}장을 받지 못했습니다.\n` +
-            `호스트가 아직 사진 폴더를 안 열었거나 업로드가 안 끝났을 수 있어요. 잠시 후 새로고침해 보시거나 호스트에게 확인해 주세요.`,
-        );
-      }
+      setSyncStatus((s) => ({ ...s, downloadFailedCount: failedCount, photosTotal: photos.length }));
     }
 
     setupChannel(projectIdParam);
@@ -323,15 +336,12 @@ export function useRoomController() {
   }, []);
 
   // ---------- 선택 상태 저장(디바운스) ----------
-  const persistErrorShownRef = useRef(false);
   const persistState = useCallback(() => {
     if (!sb || !store.projectId) return;
     persistProjectStateFn(sb, store.projectId, { sel: store.sel, notes: store.notes, ratings: store.ratings, users: store.users }, (message) => {
-      // 반복 저장마다 매번 띄우면 스팸이 되니, 세션당 한 번만 — 권한 문제면 계속 실패할 테니 한 번이면 충분히 알아챈다.
-      if (persistErrorShownRef.current) return;
-      persistErrorShownRef.current = true;
-      alert(`⚠️ 선택/별점/메모 저장에 실패했습니다(권한 문제일 수 있어요): ${message}`);
+      setSyncStatus((s) => ({ ...s, persistError: message }));
     });
+    setSyncStatus((s) => (s.persistError ? { ...s, persistError: null } : s)); // 새로 시도하는 거니 이전 에러 표시는 지움(성공하면 그대로 사라진 채 유지)
   }, [sb, store.projectId, store.sel, store.notes, store.ratings, store.users]);
 
   // ---------- 최종 확정 시 원본 P2P 요청/전송 ----------
@@ -365,6 +375,7 @@ export function useRoomController() {
     needsFolderPick,
     needsFolderRegrant: !!pendingReopenHandle,
     connectError,
+    syncStatus,
     receivedOriginals,
     openFolderPicker,
     regrantFolderAccess,

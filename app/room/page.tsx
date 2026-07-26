@@ -13,6 +13,7 @@ import ProgressModal from '@/components/room/ProgressModal';
 import WhoModal from '@/components/room/WhoModal';
 import TournamentModal from '@/components/room/TournamentModal';
 import FinalConfirmModal from '@/components/room/FinalConfirmModal';
+import SyncStatusBar from '@/components/room/SyncStatusBar';
 
 // 셀렉 앱 본체 — (wedding-photo-select/index.html 전체 조립)
 export default function RoomPage() {
@@ -91,6 +92,7 @@ function RoomPageInner() {
         onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
         sideBadgeCount={unionCount.size}
       />
+      <SyncStatusBar status={controller.syncStatus} />
       <ControlsBar onOpenFinal={() => setFinalOpen(true)} />
 
       <div className="relative flex flex-1 overflow-hidden">
